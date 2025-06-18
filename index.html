@@ -1,0 +1,365 @@
+<!-- <!DOCTYPE html>
+<html>
+  <body>
+    <form id="signupForm">
+      <input name="username" placeholder="Username" /><br />
+      <input name="email" placeholder="Email" /><br />
+      <input name="mobile" placeholder="Mobile" /><br />
+      <input name="password" type="password" placeholder="Password" /><br />
+      <input name="dob" type="date" /><br />
+      <select name="gender">
+        <option value="">Select Gender</option>
+        <option>male</option>
+        <option>female</option>
+        <option>other</option>
+      </select><br />
+      <button type="submit">Sign Up</button>
+    </form>
+
+    <script>
+      document.getElementById("signupForm").addEventListener("submit", async (e) => {
+        console.log("e.target....", e.target)
+        e.preventDefault();
+        const formData = Object.fromEntries(new FormData(e.target));
+        const res = await fetch("http://localhost:2001/api/auth/signup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        });
+        const data = await res.json();
+        console.log(data);
+        alert(JSON.stringify(data, null, 2));
+      });
+    </script>
+  </body>
+</html> -->
+
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image Upload Examples</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .upload-section {
+      margin: 30px 0;
+      padding: 20px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+    }
+
+    .file-input {
+      margin: 10px 0;
+    }
+
+    button {
+      padding: 10px 15px;
+      margin: 5px;
+      cursor: pointer;
+    }
+
+    .preview {
+      max-width: 200px;
+      max-height: 200px;
+      margin: 10px 0;
+    }
+
+    .response {
+      margin: 10px 0;
+      padding: 10px;
+      border-radius: 4px;
+    }
+
+    .success {
+      background-color: #d4edda;
+      color: #155724;
+    }
+
+    .error {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+
+    .loading {
+      color: #856404;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>Image Upload Examples</h1>
+
+    <!-- Method 1: FormData Upload -->
+    <div class="upload-section">
+      <h2>Method 1: FormData Upload (Local Storage)</h2>
+      <input type="file" id="fileInput1" accept="image/*" class="file-input">
+      <button onclick="uploadFile('local')">Upload to Local Storage</button>
+      <button onclick="uploadFile('cloud')">Upload to Cloud</button>
+      <div id="preview1"></div>
+      <div id="response1"></div>
+    </div>
+
+    <!-- Method 2: Base64 Upload -->
+    <div class="upload-section">
+      <h2>Method 2: Base64 Upload</h2>
+      <input type="file" id="fileInput2" accept="image/*" class="file-input">
+      <button onclick="uploadBase64()">Upload as Base64</button>
+      <div id="preview2"></div>
+      <div id="response2"></div>
+    </div>
+
+    <!-- Method 3: Drag and Drop -->
+    <div class="upload-section">
+      <h2>Method 3: Drag and Drop</h2>
+      <div id="dropZone" style="border: 2px dashed #ccc; padding: 40px; text-align: center; cursor: pointer;">
+        Drag and drop an image here or click to select
+      </div>
+      <div id="preview3"></div>
+      <div id="response3"></div>
+    </div>
+
+    <!-- Current Profile Picture -->
+    <div class="upload-section">
+      <h2>Current Profile Picture</h2>
+      <button onclick="getCurrentProfilePicture()">Get Current Picture</button>
+      <button onclick="deleteProfilePicture()">Delete Picture</button>
+      <div id="currentPicture"></div>
+      <div id="response4"></div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'http://localhost:2001/v2/upload'; // Adjust to your API base URL
+    const token = localStorage.getItem('authToken'); // Assuming you store auth token
+
+    // Helper function to show response
+    function showResponse(elementId, message, type = 'success') {
+      const element = document.getElementById(elementId);
+      element.innerHTML = `<div class="response ${type}">${message}</div>`;
+    }
+
+    // Helper function to show loading
+    function showLoading(elementId) {
+      const element = document.getElementById(elementId);
+      element.innerHTML = '<div class="response loading">Uploading...</div>';
+    }
+
+    // Helper function to show image preview
+    function showPreview(elementId, file) {
+      const preview = document.getElementById(elementId);
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        preview.innerHTML = `<img src="${e.target.result}" class="preview" alt="Preview">`;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // Method 1: FormData Upload
+    async function uploadFile(type) {
+      const fileInput = document.getElementById('fileInput1');
+      const file = fileInput.files[0];
+
+      if (!file) {
+        showResponse('response1', 'Please select a file', 'error');
+        return;
+      }
+
+      showPreview('preview1', file);
+      showLoading('response1');
+
+      const formData = new FormData();
+      formData.append('profilePicture', file);
+
+      const endpoint = type === 'local' ? '/upload-local' : '/upload-cloud';
+
+      try {
+        const response = await fetch(`${API_BASE}${endpoint}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          body: formData
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+          showResponse('response1', `Success: ${result.message}`, 'success');
+        } else {
+          showResponse('response1', `Error: ${result.error}`, 'error');
+        }
+      } catch (error) {
+        showResponse('response1', `Network Error: ${error.message}`, 'error');
+      }
+    }
+
+    // Method 2: Base64 Upload
+    async function uploadBase64() {
+      const fileInput = document.getElementById('fileInput2');
+      const file = fileInput.files[0];
+
+      if (!file) {
+        showResponse('response2', 'Please select a file', 'error');
+        return;
+      }
+
+      showPreview('preview2', file);
+      showLoading('response2');
+
+      const reader = new FileReader();
+      reader.onload = async function (e) {
+        const base64Data = e.target.result;
+
+        try {
+          const response = await fetch(`${API_BASE}/upload-base64`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              imageData: base64Data,
+              fileName: file.name
+            })
+          });
+
+          const result = await response.json();
+
+          if (response.ok) {
+            showResponse('response2', `Success: ${result.message}`, 'success');
+          } else {
+            showResponse('response2', `Error: ${result.error}`, 'error');
+          }
+        } catch (error) {
+          showResponse('response2', `Network Error: ${error.message}`, 'error');
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // Method 3: Drag and Drop Setup
+    const dropZone = document.getElementById('dropZone');
+
+    dropZone.addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.onchange = (e) => handleDroppedFile(e.target.files[0]);
+      input.click();
+    });
+
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.style.backgroundColor = '#f0f0f0';
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.style.backgroundColor = '';
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.style.backgroundColor = '';
+      const file = e.dataTransfer.files[0];
+      if (file && file.type.startsWith('image/')) {
+        handleDroppedFile(file);
+      } else {
+        showResponse('response3', 'Please drop an image file', 'error');
+      }
+    });
+
+    async function handleDroppedFile(file) {
+      showPreview('preview3', file);
+      showLoading('response3');
+
+      const formData = new FormData();
+      formData.append('profilePicture', file);
+
+      try {
+        const response = await fetch(`${API_BASE}/upload-cloud`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          body: formData
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+          showResponse('response3', `Success: ${result.message}`, 'success');
+        } else {
+          showResponse('response3', `Error: ${result.error}`, 'error');
+        }
+      } catch (error) {
+        showResponse('response3', `Network Error: ${error.message}`, 'error');
+      }
+    }
+
+    // Get current profile picture
+    async function getCurrentProfilePicture() {
+      try {
+        const response = await fetch(`${API_BASE}/profile-picture`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (response.ok) {
+          const blob = await response.blob();
+          const imageUrl = URL.createObjectURL(blob);
+          document.getElementById('currentPicture').innerHTML =
+            `<img src="${imageUrl}" class="preview" alt="Current Profile Picture">`;
+          showResponse('response4', 'Profile picture loaded successfully', 'success');
+        } else {
+          const result = await response.json();
+          showResponse('response4', `Error: ${result.error}`, 'error');
+        }
+      } catch (error) {
+        showResponse('response4', `Network Error: ${error.message}`, 'error');
+      }
+    }
+
+    // Delete profile picture
+    async function deleteProfilePicture() {
+      if (!confirm('Are you sure you want to delete your profile picture?')) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/profile-picture`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+          document.getElementById('currentPicture').innerHTML = '';
+          showResponse('response4', 'Profile picture deleted successfully', 'success');
+        } else {
+          showResponse('response4', `Error: ${result.error}`, 'error');
+        }
+      } catch (error) {
+        showResponse('response4', `Network Error: ${error.message}`, 'error');
+      }
+    }
+  </script>
+</body>
+
+</html>

@@ -1,0 +1,951 @@
+const User = require("../model/user.modal.js");
+const sendEmail = require("../utils/sendEmail.js");
+const sendSMS = require("../utils/sendSMS.js"); // You'll need to implement this
+const {
+  isValidEmail,
+  isValidMobile,
+  getIdentifierType,
+} = require("../utils/validators");
+
+const fs = require("fs").promises;
+const path = require("path");
+
+// const signup = async (req, res) => {
+//   try {
+//     const { username, email, mobile, password } = req.body;
+
+//     // Check for required fields
+//     if (!username || (!email && !mobile) || !password) {
+//       return res.status(400).send({
+//         code: "MISSING_FIELDS",
+//         message:
+//           "Username, password, and at least one of email or mobile are required",
+//       });
+//     }
+
+//     // Validate email format if provided
+//     if (email && !isValidEmail(email)) {
+//       return res.status(400).send({
+//         code: "INVALID_EMAIL",
+//         message: "Invalid email format",
+//       });
+//     }
+
+//     // Validate mobile format if provided
+//     if (mobile && !isValidMobile(mobile)) {
+//       return res.status(400).send({
+//         code: "INVALID_MOBILE",
+//         message: "Invalid mobile number format",
+//       });
+//     }
+
+//     // Create and save the new user
+//     const user = new User({ username, email, mobile, password });
+//     await user.save();
+//     const userObj = user.toObject();
+//     delete userObj?.password;
+//     return res.status(201).send({ user: userObj });
+//   } catch (error) {
+//     // Handle validation errors
+//     if (error.name === "ValidationError") {
+//       const errors = Object.values(error.errors).map((err) => err.message);
+//       return res.status(400).send({
+//         code: "VALIDATION_ERROR",
+//         message: "Validation failed",
+//         errors,
+//       });
+//     }
+
+//     // Handle duplicate key errors
+//     if (error.code === 11000) {
+//       const duplicateKey = Object.keys(error.keyValue)[0];
+//       return res.status(400).send({
+//         code: "DUPLICATE_KEY_ERROR",
+//         message: `Duplicate key error: ${duplicateKey} already exists`,
+//         keyPattern: error.keyPattern,
+//         keyValue: error.keyValue,
+//       });
+//     }
+
+//     // Log unexpected errors
+//     console.error("Signup error:", error);
+
+//     // Return generic error response
+//     return res.status(500).send({
+//       code: "UNKNOWN_ERROR",
+//       message: "An unexpected error occurred",
+//       error: error.message,
+//     });
+//   }
+// };
+
+const signup = async (req, res) => {
+  try {
+    const { username, email, mobile, password, gender, dob } = req.body;
+
+    if (!username || (!email && !mobile) || !password || !dob) {
+      return res.status(400).send({
+        code: "MISSING_FIELDS",
+        message:
+          "Username, password, DOB, and either email or mobile are required",
+      });
+    }
+
+    if (email && !isValidEmail(email)) {
+      return res
+        .status(400)
+        .send({ code: "INVALID_EMAIL", message: "Invalid email format" });
+    }
+
+    if (mobile && !isValidMobile(mobile)) {
+      return res
+        .status(400)
+        .send({ code: "INVALID_MOBILE", message: "Invalid mobile format" });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).send({
+        code: "WEAK_PASSWORD",
+        message: "Password must be at least 8 characters long",
+      });
+    }
+
+    const birthDate = new Date(dob);
+    const age = new Date().getFullYear() - birthDate.getFullYear();
+    if (age < 13 || age > 150) {
+      return res.status(400).send({
+        code: "INVALID_AGE",
+        message: "You must be between 13 and 150 years old",
+      });
+    }
+
+    const [usernameExists, emailExists, mobileExists] = await Promise.all([
+      User.findOne({ username }),
+      email ? User.findOne({ email }) : null,
+      mobile ? User.findOne({ mobile }) : null,
+    ]);
+
+    if (usernameExists)
+      return res
+        .status(400)
+        .send({ code: "USERNAME_TAKEN", message: "Username already exists" });
+    if (emailExists)
+      return res
+        .status(400)
+        .send({ code: "EMAIL_TAKEN", message: "Email already exists" });
+    if (mobileExists)
+      return res
+        .status(400)
+        .send({ code: "MOBILE_TAKEN", message: "Mobile already exists" });
+
+    const cleanGender = gender?.trim() || undefined;
+    const user = new User({
+      username,
+      email,
+      mobile,
+      password,
+      dob,
+      gender: cleanGender,
+    });
+
+    // 2FA Code Generation
+    const twoFACode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+    user.twoFACode = twoFACode;
+    user.twoFACodeExpiry = expiry;
+
+    await user.save();
+
+    // Delivery Preference (fallback to available method)
+    let deliveryMethod = email ? "email" : "sms";
+
+    try {
+      if (deliveryMethod === "email") {
+        await sendEmail(
+          email,
+          "Giantogram Verification Code",
+          `Hi ${username},\n\nWelcome to Giantogram!\n\nYour verification code is: ${twoFACode}\n\nThis code expires in 5 minutes.`
+        );
+      } else {
+        await sendSMS(
+          mobile,
+          `Welcome to Giantogram! Your verification code is: ${twoFACode}. This code expires in 5 minutes.`
+        );
+      }
+
+      const userObj = user.toObject();
+      delete userObj.password;
+      delete userObj.twoFACode;
+      delete userObj.passwordResetCode;
+      delete userObj.twoFACodeExpiry;
+      delete userObj.email;
+
+      return res.status(201).send({
+        code: 201,
+        message: `Account created. A verification code has been sent to your ${deliveryMethod}.`,
+        user: userObj,
+        deliveryMethod,
+        maskedDestination:
+          deliveryMethod === "email"
+            ? email.replace(/(.{2})(.*)(@.*)/, "$1***$3")
+            : mobile.replace(/(.{2})(.*)(.{2})/, "$1***$3"),
+      });
+    } catch (deliveryError) {
+      console.error("Failed to deliver 2FA after signup:", deliveryError);
+      return res.status(500).send({
+        code: "DELIVERY_ERROR",
+        message:
+          "Account created, but failed to send verification code. Try login manually.",
+      });
+    }
+  } catch (error) {
+    console.error("Signup error:", error);
+    return res
+      .status(500)
+      .send({ code: "UNKNOWN_ERROR", message: error.message });
+  }
+};
+
+const signin = async (req, res) => {
+  try {
+    const { identifier, password, preferredMethod } = req.body; // identifier can be email or mobile
+
+    if (!identifier || !password) {
+      return res.status(400).json({
+        code: "MISSING_FIELDS",
+        message: "Identifier (email or mobile) and password are required",
+      });
+    }
+
+    const identifierType = getIdentifierType(identifier);
+    if (!identifierType) {
+      return res.status(400).json({
+        code: "INVALID_IDENTIFIER",
+        message: "Invalid email or mobile format",
+      });
+    }
+
+    // Find user by email or mobile
+    const query =
+      identifierType === "email"
+        ? { email: identifier }
+        : { mobile: identifier };
+    const user = await User.findOne(query);
+
+    if (!user) {
+      return res
+        .status(401)
+        .json({ code: "USER_NOT_FOUND", message: "User not found" });
+    }
+
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      return res
+        .status(401)
+        .json({ code: "INVALID_PASSWORD", message: "Invalid password" });
+    }
+
+    // Generate 6-digit 2FA code
+    const twoFACode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+    user.twoFACode = twoFACode;
+    user.twoFACodeExpiry = expiry;
+    await user.save();
+
+    // Determine delivery method for 2FA code
+    let deliveryMethod = preferredMethod;
+
+    // If no preferred method specified, use available method
+    if (!deliveryMethod) {
+      if (user.email && user.mobile) {
+        deliveryMethod = "email"; // Default to email if both available
+      } else if (user.email) {
+        deliveryMethod = "email";
+      } else if (user.mobile) {
+        deliveryMethod = "sms";
+      }
+    }
+
+    // Validate preferred method is available
+    if (deliveryMethod === "email" && !user.email) {
+      return res.status(400).json({
+        code: "EMAIL_NOT_AVAILABLE",
+        message: "Email verification requested but no email on file",
+      });
+    }
+
+    if (deliveryMethod === "sms" && !user.mobile) {
+      return res.status(400).json({
+        code: "MOBILE_NOT_AVAILABLE",
+        message: "SMS verification requested but no mobile number on file",
+      });
+    }
+
+    try {
+      if (deliveryMethod === "email") {
+        await sendEmail(
+          user.email,
+          "Giantogram Verification Code",
+          `Hello,
+
+We received a request to sign in to your account. Please use the verification code below to continue:
+
+Verification Code: ${twoFACode}
+
+This code will expire in 5 minutes. If you didn't request this, you can safely ignore this email.
+
+Thanks,
+Giantogram`
+        );
+      } else if (deliveryMethod === "sms") {
+        await sendSMS(
+          user.mobile,
+          `Giantogram verification code: ${twoFACode}. This code will expire in 5 minutes.`
+        );
+      }
+
+      res.status(200).json({
+        code: 200,
+        message: `A verification code has been sent to your ${
+          deliveryMethod === "email" ? "email" : "mobile"
+        }. Please enter it to continue.`,
+        deliveryMethod,
+        maskedDestination:
+          deliveryMethod === "email"
+            ? user.email.replace(/(.{2})(.*)(@.*)/, "$1***$3")
+            : user.mobile.replace(/(.{2})(.*)(.{2})/, "$1***$3"),
+      });
+    } catch (deliveryError) {
+      console.error("Delivery error:", deliveryError);
+      res.status(500).json({
+        code: "DELIVERY_ERROR",
+        message: "Failed to send verification code",
+      });
+    }
+  } catch (error) {
+    console.error("Signin error:", error);
+    res
+      .status(500)
+      .json({ code: "UNKNOWN_ERROR", message: "An unexpected error occurred" });
+  }
+};
+
+const logout = (req, res) => {
+  res.send("Logout route");
+};
+
+const verify2FA = async (req, res) => {
+  try {
+    const { identifier, code } = req.body; // identifier can be email or mobile
+
+    if (!identifier || !code) {
+      return res.status(400).json({
+        code: "MISSING_FIELDS",
+        message: "Identifier and OTP are required",
+      });
+    }
+
+    const identifierType = getIdentifierType(identifier);
+    if (!identifierType) {
+      return res.status(400).json({
+        code: "INVALID_IDENTIFIER",
+        message: "Invalid email or mobile format",
+      });
+    }
+
+    // Find user by email or mobile
+    const query =
+      identifierType === "email"
+        ? { email: identifier }
+        : { mobile: identifier };
+    const user = await User.findOne(query);
+
+    if (!user) {
+      return res
+        .status(401)
+        .json({ code: "USER_NOT_FOUND", message: "User not found" });
+    }
+
+    if (user.twoFACode !== code) {
+      return res
+        .status(400)
+        .json({ code: 400, message: "Invalid or expired code" });
+    }
+
+    if (user.twoFACodeExpiry < new Date()) {
+      return res.status(400).json({ code: 400, message: "Code expired" });
+    }
+
+    // Clear 2FA fields after successful verification
+    user.twoFACode = null;
+    user.twoFACodeExpiry = null;
+    await user.save();
+
+    const userObj = user.toObject();
+    delete userObj?.password;
+
+    const token = user.generateAuthToken();
+    const profilePicture = user.checkProfileComplete();
+    res
+      .status(200)
+      .json({
+        code: 200,
+        message: "Login successful",
+        token,
+        user: userObj,
+        profilePicture,
+      });
+  } catch (error) {
+    console.error("2FA verification error:", error);
+    res
+      .status(500)
+      .json({ code: "UNKNOWN_ERROR", message: "An unexpected error occurred" });
+  }
+};
+
+const deactivateUser = async (req, res) => {
+  try {
+    const { identifier } = req.body; // can be email or mobile
+
+    if (!identifier) {
+      return res.status(400).json({
+        code: "MISSING_IDENTIFIER",
+        message: "Email or mobile number is required",
+      });
+    }
+
+    const identifierType = getIdentifierType(identifier);
+    if (!identifierType) {
+      return res.status(400).json({
+        code: "INVALID_IDENTIFIER",
+        message: "Invalid email or mobile format",
+      });
+    }
+
+    // Find user by email or mobile
+    const query =
+      identifierType === "email"
+        ? { email: identifier }
+        : { mobile: identifier };
+    const user = await User.findOne(query);
+
+    if (!user) {
+      return res
+        .status(404)
+        .json({ code: "USER_NOT_FOUND", message: "User not found" });
+    }
+
+    if (user.isDeactivated) {
+      return res.status(400).json({
+        code: "ALREADY_DEACTIVATED",
+        message: "User already deactivated",
+      });
+    }
+
+    user.isDeactivated = true;
+    await user.save();
+
+    const userObj = user.toObject();
+    delete userObj?.password;
+
+    res.status(200).json({
+      code: 200,
+      message: "User successfully deactivated",
+      user: userObj,
+    });
+  } catch (error) {
+    console.error("Deactivate error:", error);
+    res
+      .status(500)
+      .json({ code: "UNKNOWN_ERROR", message: "An unexpected error occurred" });
+  }
+};
+
+const reactivateUser = async (req, res) => {
+  try {
+    const { identifier } = req.body; // can be email or mobile
+
+    if (!identifier) {
+      return res.status(400).json({
+        code: "MISSING_IDENTIFIER",
+        message: "Email or mobile number is required",
+      });
+    }
+
+    const identifierType = getIdentifierType(identifier);
+    if (!identifierType) {
+      return res.status(400).json({
+        code: "INVALID_IDENTIFIER",
+        message: "Invalid email or mobile format",
+      });
+    }
+
+    // Find user by email or mobile
+    const query =
+      identifierType === "email"
+        ? { email: identifier }
+        : { mobile: identifier };
+    const user = await User.findOne(query);
+
+    if (!user) {
+      return res
+        .status(404)
+        .json({ code: "USER_NOT_FOUND", message: "User not found" });
+    }
+
+    if (!user.isDeactivated) {
+      return res
+        .status(400)
+        .json({ code: "NOT_DEACTIVATED", message: "User is already active" });
+    }
+
+    user.isDeactivated = false;
+    await user.save();
+
+    const userObj = user.toObject();
+    delete userObj?.password;
+
+    res.status(200).json({
+      code: 200,
+      message: "User successfully reactivated",
+      user: userObj,
+    });
+  } catch (error) {
+    console.error("Reactivate error:", error);
+    res
+      .status(500)
+      .json({ code: "UNKNOWN_ERROR", message: "An unexpected error occurred" });
+  }
+};
+
+const forgotPassword = async (req, res) => {
+  try {
+    const { identifier, preferredMethod } = req.body; // identifier can be email or mobile
+
+    if (!identifier) {
+      return res.status(400).json({
+        code: "MISSING_IDENTIFIER",
+        message: "Email or mobile number is required",
+      });
+    }
+
+    const identifierType = getIdentifierType(identifier);
+    if (!identifierType) {
+      return res.status(400).json({
+        code: "INVALID_IDENTIFIER",
+        message: "Invalid email or mobile format",
+      });
+    }
+
+    // Find user by email or mobile
+    const query =
+      identifierType === "email"
+        ? { email: identifier }
+        : { mobile: identifier };
+    const user = await User.findOne(query);
+
+    if (!user) {
+      // For security, don't reveal if email/mobile exists or not
+      return res.status(200).json({
+        code: 200,
+        message:
+          "If an account with that identifier exists, a password reset code has been sent.",
+      });
+    }
+
+    // Generate 6-digit reset code
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+    user.passwordResetCode = resetCode;
+    user.passwordResetExpiry = expiry;
+    await user.save();
+
+    // Determine delivery method for reset code
+    let deliveryMethod = preferredMethod;
+
+    // If no preferred method specified, use the same method as identifier
+    if (!deliveryMethod) {
+      if (identifierType === "email") {
+        deliveryMethod = "email";
+      } else if (identifierType === "mobile") {
+        deliveryMethod = "sms";
+      }
+    }
+
+    // If user wants different method, check if it's available
+    if (deliveryMethod === "email" && !user.email) {
+      deliveryMethod = "sms";
+    } else if (deliveryMethod === "sms" && !user.mobile) {
+      deliveryMethod = "email";
+    }
+
+    try {
+      if (deliveryMethod === "email" && user.email) {
+        await sendEmail(
+          user.email,
+          "Giantogram Password Reset Code",
+          `Hello,
+
+We received a request to reset your password. Please use the reset code below to create a new password:
+
+Reset Code: ${resetCode}
+
+This code will expire in 15 minutes. If you didn't request a password reset, you can safely ignore this email.
+
+Thanks,
+Giantogram`
+        );
+      } else if (deliveryMethod === "sms" && user.mobile) {
+        await sendSMS(
+          user.mobile,
+          `Giantogram password reset code: ${resetCode}. This code will expire in 15 minutes.`
+        );
+      }
+
+      res.status(200).json({
+        code: 200,
+        message:
+          "If an account with that identifier exists, a password reset code has been sent.",
+      });
+    } catch (deliveryError) {
+      console.error("Password reset delivery error:", deliveryError);
+      res.status(200).json({
+        code: 200,
+        message:
+          "If an account with that identifier exists, a password reset code has been sent.",
+      });
+    }
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    res
+      .status(500)
+      .json({ code: "UNKNOWN_ERROR", message: "An unexpected error occurred" });
+  }
+};
+
+const resetPassword = async (req, res) => {
+  try {
+    const { identifier, resetCode, newPassword } = req.body;
+
+    console.log({ identifier, resetCode, newPassword });
+    if (!identifier || !resetCode || !newPassword) {
+      return res.status(400).json({
+        code: "MISSING_FIELDS",
+        message: "Identifier, reset code, and new password are required",
+      });
+    }
+
+    const identifierType = getIdentifierType(identifier);
+    if (!identifierType) {
+      return res.status(400).json({
+        code: "INVALID_IDENTIFIER",
+        message: "Invalid email or mobile format",
+      });
+    }
+
+    // Find user by email or mobile
+    const query =
+      identifierType === "email"
+        ? { email: identifier }
+        : { mobile: identifier };
+    const user = await User.findOne(query);
+
+    if (!user) {
+      return res.status(400).json({
+        code: "INVALID_RESET",
+        message: "Invalid reset code or identifier",
+      });
+    }
+
+    if (user.passwordResetCode !== resetCode) {
+      return res.status(400).json({
+        code: "INVALID_RESET_CODE",
+        message: "Invalid reset code",
+      });
+    }
+
+    if (user.passwordResetExpiry < new Date()) {
+      return res.status(400).json({
+        code: "RESET_CODE_EXPIRED",
+        message: "Reset code has expired. Please request a new one.",
+      });
+    }
+
+    // Update password
+    user.password = newPassword;
+    user.passwordResetCode = null;
+    user.passwordResetExpiry = null;
+
+    // Clear any existing 2FA codes for security
+    user.twoFACode = null;
+    user.twoFACodeExpiry = null;
+
+    await user.save();
+
+    // Send confirmation to both email and mobile if available
+    const confirmationMessage = `Hello,
+
+Your password has been successfully changed. If you didn't make this change, please contact our support team immediately.
+
+Thanks,
+Giantogram`;
+
+    try {
+      if (user.email) {
+        await sendEmail(
+          user.email,
+          "Giantogram Password Changed",
+          confirmationMessage
+        );
+      }
+      if (user.mobile) {
+        await sendSMS(
+          user.mobile,
+          "Giantogram: Your password has been successfully changed. If you didn't make this change, please contact support."
+        );
+      }
+    } catch (notificationError) {
+      console.error("Password change notification error:", notificationError);
+      // Don't fail the password reset if notification fails
+    }
+
+    res.status(200).json({
+      code: 200,
+      message: "Password has been successfully reset",
+    });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    res
+      .status(500)
+      .json({ code: "UNKNOWN_ERROR", message: "An unexpected error occurred" });
+  }
+};
+
+const resend2FA = async (req, res) => {
+  try {
+    const { identifier, preferredMethod } = req.body;
+
+    if (!identifier) {
+      return res.status(400).json({
+        code: "MISSING_FIELDS",
+        message: "Identifier (email or mobile) is required",
+      });
+    }
+
+    const identifierType = getIdentifierType(identifier);
+    if (!identifierType) {
+      return res.status(400).json({
+        code: "INVALID_IDENTIFIER",
+        message: "Invalid email or mobile format",
+      });
+    }
+
+    // Find user by email or mobile
+    const query =
+      identifierType === "email"
+        ? { email: identifier }
+        : { mobile: identifier };
+    const user = await User.findOne(query);
+
+    if (!user) {
+      return res.status(401).json({
+        code: "USER_NOT_FOUND",
+        message: "User not found",
+      });
+    }
+
+    // Generate new 6-digit 2FA code
+    const twoFACode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+    user.twoFACode = twoFACode;
+    user.twoFACodeExpiry = expiry;
+    await user.save();
+
+    // Determine delivery method for 2FA code
+    let deliveryMethod = preferredMethod;
+
+    // If no preferred method specified, use available method
+    if (!deliveryMethod) {
+      if (user.email && user.mobile) {
+        deliveryMethod = "email"; // Default to email if both available
+      } else if (user.email) {
+        deliveryMethod = "email";
+      } else if (user.mobile) {
+        deliveryMethod = "sms";
+      }
+    }
+
+    // Validate preferred method is available
+    if (deliveryMethod === "email" && !user.email) {
+      return res.status(400).json({
+        code: "EMAIL_NOT_AVAILABLE",
+        message: "Email verification requested but no email on file",
+      });
+    }
+
+    if (deliveryMethod === "sms" && !user.mobile) {
+      return res.status(400).json({
+        code: "MOBILE_NOT_AVAILABLE",
+        message: "SMS verification requested but no mobile number on file",
+      });
+    }
+
+    try {
+      if (deliveryMethod === "email") {
+        await sendEmail(
+          user.email,
+          "Giantogram Verification Code",
+          `Hello,
+
+We received a request to resend your verification code. Please use the code below to continue:
+
+Verification Code: ${twoFACode}
+
+This code will expire in 5 minutes. If you didn't request this, you can safely ignore this email.
+
+Thanks,
+Giantogram`
+        );
+      } else if (deliveryMethod === "sms") {
+        await sendSMS(
+          user.mobile,
+          `Giantogram verification code: ${twoFACode}. This code will expire in 5 minutes.`
+        );
+      }
+
+      res.status(200).json({
+        code: 200,
+        message: `A new verification code has been sent to your ${
+          deliveryMethod === "email" ? "email" : "mobile"
+        }.`,
+        deliveryMethod,
+        maskedDestination:
+          deliveryMethod === "email"
+            ? user.email.replace(/(.{2})(.*)(@.*)/, "$1***$3")
+            : user.mobile.replace(/(.{2})(.*)(.{2})/, "$1***$3"),
+      });
+    } catch (deliveryError) {
+      console.error("Delivery error:", deliveryError);
+      res.status(500).json({
+        code: "DELIVERY_ERROR",
+        message: "Failed to send verification code",
+      });
+    }
+  } catch (error) {
+    console.error("Resend 2FA error:", error);
+    res.status(500).json({
+      code: "UNKNOWN_ERROR",
+      message: "An unexpected error occurred",
+    });
+  }
+};
+
+// const uploadProfilePicture = async (req, res) => {
+//   try {
+//     if (!req.file) {
+//       return res.status(400).json({ code: "NO_FILE", message: "No file uploaded" });
+//     }
+
+//     const user = req.user;
+//     user.profilePicture = `/uploads/profile_pictures/${req.file.filename}`;
+//     await user.save();
+
+//     res.status(200).json({
+//       code: 200,
+//       message: "Profile picture uploaded successfully",
+//       profilePicture: user.profilePicture,
+//     });
+//   } catch (err) {
+//     console.error("Upload error:", err);
+//     res.status(500).json({ code: "UPLOAD_ERROR", message: err.message });
+//   }
+// };
+
+const uploadProfilePicture = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res
+        .status(400)
+        .json({ code: "NO_FILE", message: "No file uploaded" });
+    }
+
+    const user = req.user;
+    user.profilePicture = `/uploads/profile_pictures/${req.file.filename}`;
+    await user.save();
+
+    res.status(200).json({
+      code: 200,
+      message: "Profile picture uploaded successfully",
+      profilePicture: user.profilePicture,
+    });
+  } catch (err) {
+    console.error("Upload error:", err);
+    res.status(500).json({ code: "UPLOAD_ERROR", message: err.message });
+  }
+};
+
+// const uploadProfilePicture = async (req, res) => {
+//   try {
+//     if (!req.file) {
+//       return res.status(400).json({ code: "NO_FILE", message: "No file uploaded" });
+//     }
+
+//     const user = req.user;
+
+//     // Store the old profile picture path before updating
+//     const oldProfilePicture = user.profilePicture;
+
+//     // Update user with new profile picture
+//     user.profilePicture = `/uploads/profile_pictures/${req.file.filename}`;
+//     await user.save();
+
+//     // Delete old profile picture file if it exists and is not the default
+//     if (oldProfilePicture && !oldProfilePicture.includes('ui-avatars.com')) {
+//       try {
+//         const oldFilePath = path.join(__dirname, '..', oldProfilePicture);
+//         await fs.unlink(oldFilePath);
+//         console.log(`Deleted old profile picture: ${oldFilePath}`);
+//       } catch (deleteError) {
+//         // Log but don't fail the request if file deletion fails
+//         console.error("Error deleting old profile picture:", deleteError);
+//       }
+//     }
+
+//     res.status(200).json({
+//       code: 200,
+//       message: "Profile picture uploaded successfully",
+//       profilePicture: user.profilePicture,
+//       url: user.profilePicture, // Add this for consistency with frontend
+//     });
+
+//   } catch (err) {
+//     // If something goes wrong after file upload, clean up the uploaded file
+//     if (req.file) {
+//       try {
+//         const uploadedFilePath = path.join(__dirname, '..', 'uploads', 'profile_pictures', req.file.filename);
+//         await fs.unlink(uploadedFilePath);
+//       } catch (cleanupError) {
+//         console.error("Error cleaning up uploaded file:", cleanupError);
+//       }
+//     }
+
+//     console.error("Upload error:", err);
+//     res.status(500).json({ code: "UPLOAD_ERROR", message: err.message });
+//   }
+// };
+
+module.exports = {
+  signin,
+  signup,
+  logout,
+  verify2FA,
+  deactivateUser,
+  reactivateUser,
+  forgotPassword,
+  resetPassword,
+  resend2FA,
+  uploadProfilePicture,
+};
