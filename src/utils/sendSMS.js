@@ -19,7 +19,7 @@ const twilio = require("twilio");
 
 const accountSid = "ACce09ba9fc6052a5f35190dfb11cd7f91"; // Replace with your actual Twilio SID
 const authToken = "bad4b5369b00eff8507c7eaa5fcd4f19"; // Replace with your actual Twilio Auth Token
-const twilioPhoneNumber = "+919071528065"; // Replace with your Twilio phone number
+const twilioPhoneNumber = "+14452917093"; // Replace with your Twilio phone number
 
 const client = twilio(accountSid, authToken);
 

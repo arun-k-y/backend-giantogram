@@ -9,6 +9,7 @@ const {
 
 const fs = require("fs").promises;
 const path = require("path");
+const cloudinary = require("../config/cloudinary.js");
 
 // const signup = async (req, res) => {
 //   try {
@@ -154,7 +155,7 @@ const signup = async (req, res) => {
     user.twoFACode = twoFACode;
     user.twoFACodeExpiry = expiry;
 
-    await user.save();
+    await user.save({ validateBeforeSave: false });
 
     // Delivery Preference (fallback to available method)
     let deliveryMethod = email ? "email" : "sms";
@@ -195,7 +196,7 @@ const signup = async (req, res) => {
       return res.status(500).send({
         code: "DELIVERY_ERROR",
         message:
-          "Account created, but failed to send verification code. Try login manually.",
+          "Account created, but failed to send verification code.",
       });
     }
   } catch (error) {
@@ -251,7 +252,7 @@ const signin = async (req, res) => {
 
     user.twoFACode = twoFACode;
     user.twoFACodeExpiry = expiry;
-    await user.save();
+    await user.save({ validateBeforeSave: false });
 
     // Determine delivery method for 2FA code
     let deliveryMethod = preferredMethod;
@@ -380,22 +381,20 @@ const verify2FA = async (req, res) => {
     // Clear 2FA fields after successful verification
     user.twoFACode = null;
     user.twoFACodeExpiry = null;
-    await user.save();
+    await user.save({ validateBeforeSave: false });
 
     const userObj = user.toObject();
     delete userObj?.password;
 
     const token = user.generateAuthToken();
     const profilePicture = user.checkProfileComplete();
-    res
-      .status(200)
-      .json({
-        code: 200,
-        message: "Login successful",
-        token,
-        user: userObj,
-        profilePicture,
-      });
+    res.status(200).json({
+      code: 200,
+      message: "Login successful",
+      token,
+      user: userObj,
+      profilePicture,
+    });
   } catch (error) {
     console.error("2FA verification error:", error);
     res
@@ -444,8 +443,7 @@ const deactivateUser = async (req, res) => {
     }
 
     user.isDeactivated = true;
-    await user.save();
-
+    await user.save({ validateBeforeSave: false });
     const userObj = user.toObject();
     delete userObj?.password;
 
@@ -501,8 +499,7 @@ const reactivateUser = async (req, res) => {
     }
 
     user.isDeactivated = false;
-    await user.save();
-
+    await user.save({ validateBeforeSave: false });
     const userObj = user.toObject();
     delete userObj?.password;
 
@@ -547,10 +544,9 @@ const forgotPassword = async (req, res) => {
 
     if (!user) {
       // For security, don't reveal if email/mobile exists or not
-      return res.status(200).json({
-        code: 200,
-        message:
-          "If an account with that identifier exists, a password reset code has been sent.",
+      return res.status(401).json({
+        code: "USER_NOT_FOUND",
+        message: "User not found",
       });
     }
 
@@ -560,7 +556,7 @@ const forgotPassword = async (req, res) => {
 
     user.passwordResetCode = resetCode;
     user.passwordResetExpiry = expiry;
-    await user.save();
+    await user.save({ validateBeforeSave: false });
 
     // Determine delivery method for reset code
     let deliveryMethod = preferredMethod;
@@ -682,7 +678,7 @@ const resetPassword = async (req, res) => {
     user.twoFACode = null;
     user.twoFACodeExpiry = null;
 
-    await user.save();
+    await user.save({ validateBeforeSave: false });
 
     // Send confirmation to both email and mobile if available
     const confirmationMessage = `Hello,
@@ -762,7 +758,7 @@ const resend2FA = async (req, res) => {
 
     user.twoFACode = twoFACode;
     user.twoFACodeExpiry = expiry;
-    await user.save();
+    await user.save({ validateBeforeSave: false });
 
     // Determine delivery method for 2FA code
     let deliveryMethod = preferredMethod;
@@ -864,6 +860,54 @@ Giantogram`
 //   }
 // };
 
+// const uploadProfilePicture = async (req, res) => {
+//   try {
+//     if (!req.file) {
+//       return res
+//         .status(400)
+//         .json({ code: "NO_FILE", message: "No file uploaded" });
+//     }
+
+//     const user = req.user;
+//     user.profilePicture = `/uploads/profile_pictures/${req.file.filename}`;
+//     await user.save({ validateBeforeSave: false });
+//     res.status(200).json({
+//       code: 200,
+//       message: "Profile picture uploaded successfully",
+//       profilePicture: user.profilePicture,
+//     });
+//   } catch (err) {
+//     console.error("Upload error:", err);
+//     res.status(500).json({ code: "UPLOAD_ERROR", message: err.message });
+//   }
+// };
+
+// const uploadProfilePicture = async (req, res) => {
+//   try {
+//     if (!req.file) {
+//       return res.status(400).json({ code: "NO_FILE", message: "No file uploaded" });
+//     }
+
+//     const result = await cloudinary.uploader.upload(req.file.path, {
+//       folder: "profile_pictures",
+//       resource_type: "image",
+//     });
+
+//     const user = req.user;
+//     user.profilePicture = result.secure_url; // Cloudinary public URL
+//     await user.save({ validateBeforeSave: false });
+
+//     res.status(200).json({
+//       code: 200,
+//       message: "Uploaded successfully",
+//       profilePicture: user.profilePicture,
+//     });
+//   } catch (err) {
+//     console.error("Cloudinary upload error:", err);
+//     res.status(500).json({ code: "UPLOAD_ERROR", message: err.message });
+//   }
+// };
+
 const uploadProfilePicture = async (req, res) => {
   try {
     if (!req.file) {
@@ -873,69 +917,41 @@ const uploadProfilePicture = async (req, res) => {
     }
 
     const user = req.user;
-    user.profilePicture = `/uploads/profile_pictures/${req.file.filename}`;
-    await user.save();
+
+    // Optional: Extract public_id from old URL to delete old image
+    if (user.profilePicture) {
+      const publicIdMatch = user.profilePicture.match(
+        /\/profile_pictures\/([^/.]+)/
+      );
+      if (publicIdMatch?.[1]) {
+        await cloudinary.uploader.destroy(
+          `profile_pictures/${publicIdMatch[1]}`
+        );
+      }
+    }
+
+    // Upload new image with a fixed public_id to overwrite or create new
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      folder: "profile_pictures",
+      public_id: user._id.toString(), // So it's always the same ID per user
+      overwrite: true,
+      resource_type: "image",
+    });
+
+    // Save the new URL
+    user.profilePicture = result.secure_url;
+    await user.save({ validateBeforeSave: false });
 
     res.status(200).json({
       code: 200,
-      message: "Profile picture uploaded successfully",
+      message: "Uploaded successfully",
       profilePicture: user.profilePicture,
     });
   } catch (err) {
-    console.error("Upload error:", err);
+    console.error("Cloudinary upload error:", err);
     res.status(500).json({ code: "UPLOAD_ERROR", message: err.message });
   }
 };
-
-// const uploadProfilePicture = async (req, res) => {
-//   try {
-//     if (!req.file) {
-//       return res.status(400).json({ code: "NO_FILE", message: "No file uploaded" });
-//     }
-
-//     const user = req.user;
-
-//     // Store the old profile picture path before updating
-//     const oldProfilePicture = user.profilePicture;
-
-//     // Update user with new profile picture
-//     user.profilePicture = `/uploads/profile_pictures/${req.file.filename}`;
-//     await user.save();
-
-//     // Delete old profile picture file if it exists and is not the default
-//     if (oldProfilePicture && !oldProfilePicture.includes('ui-avatars.com')) {
-//       try {
-//         const oldFilePath = path.join(__dirname, '..', oldProfilePicture);
-//         await fs.unlink(oldFilePath);
-//         console.log(`Deleted old profile picture: ${oldFilePath}`);
-//       } catch (deleteError) {
-//         // Log but don't fail the request if file deletion fails
-//         console.error("Error deleting old profile picture:", deleteError);
-//       }
-//     }
-
-//     res.status(200).json({
-//       code: 200,
-//       message: "Profile picture uploaded successfully",
-//       profilePicture: user.profilePicture,
-//       url: user.profilePicture, // Add this for consistency with frontend
-//     });
-
-//   } catch (err) {
-//     // If something goes wrong after file upload, clean up the uploaded file
-//     if (req.file) {
-//       try {
-//         const uploadedFilePath = path.join(__dirname, '..', 'uploads', 'profile_pictures', req.file.filename);
-//         await fs.unlink(uploadedFilePath);
-//       } catch (cleanupError) {
-//         console.error("Error cleaning up uploaded file:", cleanupError);
-//       }
-//     }
-
-//     console.error("Upload error:", err);
-//     res.status(500).json({ code: "UPLOAD_ERROR", message: err.message });
-//   }
-// };
 
 module.exports = {
   signin,

@@ -1,29 +1,29 @@
-// utils/upload.js
-const multer = require("multer");
-const path = require("path");
+// // utils/upload.js
+// const multer = require("multer");
+// const path = require("path");
 
-// Storage config
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, "uploads/profile_pictures/");
-  },
-  filename: function (req, file, cb) {
-    const ext = path.extname(file.originalname);
-    const filename = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
-    cb(null, filename);
-  },
-});
+// // Storage config
+// const storage = multer.diskStorage({
+//   destination: function (req, file, cb) {
+//     cb(null, "uploads/profile_pictures/");
+//   },
+//   filename: function (req, file, cb) {
+//     const ext = path.extname(file.originalname);
+//     const filename = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+//     cb(null, filename);
+//   },
+// });
 
-// File filter
-const fileFilter = (req, file, cb) => {
-  const allowedTypes = ["image/jpeg", "image/png", "image/jpg"];
-  if (allowedTypes.includes(file.mimetype)) cb(null, true);
-  else cb(new Error("Only .jpeg, .jpg, .png files allowed"), false);
-};
+// // File filter
+// const fileFilter = (req, file, cb) => {
+//   const allowedTypes = ["image/jpeg", "image/png", "image/jpg"];
+//   if (allowedTypes.includes(file.mimetype)) cb(null, true);
+//   else cb(new Error("Only .jpeg, .jpg, .png files allowed"), false);
+// };
 
-const upload = multer({ storage, fileFilter });
+// const upload = multer({ storage, fileFilter });
 
-module.exports = upload;
+// module.exports = upload;
 
 // // utils/upload.js
 // const multer = require("multer");
@@ -67,3 +67,33 @@ module.exports = upload;
 // });
 
 // module.exports = upload;
+
+// const multer = require("multer");
+// const path = require("path");
+
+// const storage = multer.diskStorage({
+//   destination: (req, file, cb) => cb(null, "tmp/"),
+//   filename: (req, file, cb) =>
+//     cb(null, `${Date.now()}-${file.originalname.replace(/\s+/g, "-")}`),
+// });
+
+// const upload = multer({ storage });
+
+// module.exports = upload;
+
+const multer = require("multer");
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const isRender = process.env.RENDER; // RENDER env var exists on Render.com
+    const destPath = isRender ? "/tmp" : "tmp";
+    cb(null, destPath);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `${Date.now()}-${file.originalname.replace(/\s+/g, "-")}`);
+  },
+});
+
+const upload = multer({ storage });
+
+module.exports = upload;
