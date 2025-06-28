@@ -7,8 +7,6 @@ const {
   getIdentifierType,
 } = require("../utils/validators");
 
-const fs = require("fs").promises;
-const path = require("path");
 const cloudinary = require("../config/cloudinary.js");
 
 // const signup = async (req, res) => {
@@ -82,9 +80,17 @@ const cloudinary = require("../config/cloudinary.js");
 
 const signup = async (req, res) => {
   try {
-    const { username, email, mobile, password, gender, dob } = req.body;
+    const { name, username, email, mobile, password, gender, dob } = req.body;
 
-    if (!username || (!email && !mobile) || !password || !dob) {
+    // if (!username || (!email && !mobile) || !password || !dob) {
+    //   return res.status(400).send({
+    //     code: "MISSING_FIELDS",
+    //     message:
+    //       "Username, password, DOB, and either email or mobile are required",
+    //   });
+    // }
+
+    if (!username || (!email && !mobile) || !name || !dob) {
       return res.status(400).send({
         code: "MISSING_FIELDS",
         message:
@@ -95,28 +101,42 @@ const signup = async (req, res) => {
     if (email && !isValidEmail(email)) {
       return res
         .status(400)
-        .send({ code: "INVALID_EMAIL", message: "Invalid email format" });
+        .send({ code: "INVALID_EMAIL", message: "Enter Valid Gmail" });
     }
 
     if (mobile && !isValidMobile(mobile)) {
       return res
         .status(400)
-        .send({ code: "INVALID_MOBILE", message: "Invalid mobile format" });
+        .send({ code: "INVALID_MOBILE", message: "Enter Valid Number" });
     }
 
-    if (password.length < 8) {
-      return res.status(400).send({
-        code: "WEAK_PASSWORD",
-        message: "Password must be at least 8 characters long",
-      });
-    }
+    // if (password.length < 8) {
+    //   return res.status(400).send({
+    //     code: "WEAK_PASSWORD",
+    //     message: "Password must be at least 8 characters long",
+    //   });
+    // }
 
     const birthDate = new Date(dob);
     const age = new Date().getFullYear() - birthDate.getFullYear();
-    if (age < 13 || age > 150) {
+    // if (age < 13 || age > 150) {
+    //   return res.status(400).send({
+    //     code: "INVALID_AGE",
+    //     message: "You must be between 13 and 150 years old",
+    //   });
+    // }
+
+    if (age < 13) {
       return res.status(400).send({
         code: "INVALID_AGE",
-        message: "You must be between 13 and 150 years old",
+        message: "At least User have to be 13 years old",
+      });
+    }
+
+    if (age > 150) {
+      return res.status(400).send({
+        code: "INVALID_AGE",
+        message: "At most User have to be 150 years old",
       });
     }
 
@@ -129,22 +149,23 @@ const signup = async (req, res) => {
     if (usernameExists)
       return res
         .status(400)
-        .send({ code: "USERNAME_TAKEN", message: "Username already exists" });
-    if (emailExists)
-      return res
-        .status(400)
-        .send({ code: "EMAIL_TAKEN", message: "Email already exists" });
-    if (mobileExists)
-      return res
-        .status(400)
-        .send({ code: "MOBILE_TAKEN", message: "Mobile already exists" });
+        .send({ code: "USERNAME_TAKEN", message: "Username Already In Use" });
+    // if (emailExists)
+    //   return res
+    //     .status(400)
+    //     .send({ code: "EMAIL_TAKEN", message: "Email already exists" });
+    // if (mobileExists)
+    //   return res
+    //     .status(400)
+    //     .send({ code: "MOBILE_TAKEN", message: "Mobile already exists" });
 
     const cleanGender = gender?.trim() || undefined;
     const user = new User({
+      name,
       username,
       email,
       mobile,
-      password,
+      // password,
       dob,
       gender: cleanGender,
     });
@@ -195,8 +216,7 @@ const signup = async (req, res) => {
       console.error("Failed to deliver 2FA after signup:", deliveryError);
       return res.status(500).send({
         code: "DELIVERY_ERROR",
-        message:
-          "Account created, but failed to send verification code.",
+        message: "Account created, but failed to send verification code.",
       });
     }
   } catch (error) {
@@ -222,15 +242,25 @@ const signin = async (req, res) => {
     if (!identifierType) {
       return res.status(400).json({
         code: "INVALID_IDENTIFIER",
-        message: "Invalid email or mobile format",
+        message: "Invalid email or mobile number or username format",
       });
     }
 
     // Find user by email or mobile
+    // const query =
+    //   identifierType === "email"
+    //     ? { email: identifier }
+    //     : { mobile: identifier };
+
     const query =
       identifierType === "email"
         ? { email: identifier }
-        : { mobile: identifier };
+        : identifierType === "mobile"
+        ? { mobile: identifier }
+        : identifierType === "username"
+        ? { username: identifier }
+        : null;
+
     const user = await User.findOne(query);
 
     if (!user) {
@@ -351,15 +381,19 @@ const verify2FA = async (req, res) => {
     if (!identifierType) {
       return res.status(400).json({
         code: "INVALID_IDENTIFIER",
-        message: "Invalid email or mobile format",
+        message: "Invalid email or mobile number or username format",
       });
     }
 
-    // Find user by email or mobile
     const query =
       identifierType === "email"
         ? { email: identifier }
-        : { mobile: identifier };
+        : identifierType === "mobile"
+        ? { mobile: identifier }
+        : identifierType === "username"
+        ? { username: identifier }
+        : null;
+
     const user = await User.findOne(query);
 
     if (!user) {
@@ -405,12 +439,12 @@ const verify2FA = async (req, res) => {
 
 const deactivateUser = async (req, res) => {
   try {
-    const { identifier } = req.body; // can be email or mobile
+    const { identifier } = req.body;
 
     if (!identifier) {
       return res.status(400).json({
         code: "MISSING_IDENTIFIER",
-        message: "Email or mobile number is required",
+        message: "Email or mobile number or username is required",
       });
     }
 
@@ -418,7 +452,7 @@ const deactivateUser = async (req, res) => {
     if (!identifierType) {
       return res.status(400).json({
         code: "INVALID_IDENTIFIER",
-        message: "Invalid email or mobile format",
+        message: "Invalid Email, mobile number or username format",
       });
     }
 
@@ -426,7 +460,12 @@ const deactivateUser = async (req, res) => {
     const query =
       identifierType === "email"
         ? { email: identifier }
-        : { mobile: identifier };
+        : identifierType === "mobile"
+        ? { mobile: identifier }
+        : identifierType === "username"
+        ? { username: identifier }
+        : null;
+
     const user = await User.findOne(query);
 
     if (!user) {
@@ -467,7 +506,7 @@ const reactivateUser = async (req, res) => {
     if (!identifier) {
       return res.status(400).json({
         code: "MISSING_IDENTIFIER",
-        message: "Email or mobile number is required",
+        message: "Email or mobile number or username is required",
       });
     }
 
@@ -475,7 +514,7 @@ const reactivateUser = async (req, res) => {
     if (!identifierType) {
       return res.status(400).json({
         code: "INVALID_IDENTIFIER",
-        message: "Invalid email or mobile format",
+        message: "Invalid Email, mobile number or username format",
       });
     }
 
@@ -483,7 +522,11 @@ const reactivateUser = async (req, res) => {
     const query =
       identifierType === "email"
         ? { email: identifier }
-        : { mobile: identifier };
+        : identifierType === "mobile"
+        ? { mobile: identifier }
+        : identifierType === "username"
+        ? { username: identifier }
+        : null;
     const user = await User.findOne(query);
 
     if (!user) {
@@ -516,9 +559,232 @@ const reactivateUser = async (req, res) => {
   }
 };
 
+// const forgotPassword = async (req, res) => {
+//   try {
+//     const { identifier, preferredMethod } = req.body; // identifier can be email or mobile
+
+//     if (!identifier) {
+//       return res.status(400).json({
+//         code: "MISSING_IDENTIFIER",
+//         message: "Email, mobile or username number is required",
+//       });
+//     }
+
+//     const identifierType = getIdentifierType(identifier);
+//     if (!identifierType) {
+//       return res.status(400).json({
+//         code: "INVALID_IDENTIFIER",
+//         message: "Invalid email, mobile or username format",
+//       });
+//     }
+
+//     const query =
+//       identifierType === "email"
+//         ? { email: identifier }
+//         : identifierType === "mobile"
+//         ? { mobile: identifier }
+//         : identifierType === "username"
+//         ? { username: identifier }
+//         : null;
+
+//     const user = await User.findOne(query);
+
+//     if (!user) {
+//       // For security, don't reveal if email/mobile exists or not
+//       return res.status(401).json({
+//         code: "USER_NOT_FOUND",
+//         message: "User not found",
+//       });
+//     }
+
+//     // Generate 6-digit reset code
+//     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+//     const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+//     user.passwordResetCode = resetCode;
+//     user.passwordResetExpiry = expiry;
+//     await user.save({ validateBeforeSave: false });
+
+//     // Determine delivery method for reset code
+//     let deliveryMethod = preferredMethod;
+
+//     // If no preferred method specified, use the same method as identifier
+//     // if (!deliveryMethod) {
+//     //   if (identifierType === "email") {
+//     //     deliveryMethod = "email";
+//     //   } else if (identifierType === "mobile") {
+//     //     deliveryMethod = "sms";
+//     //   }
+//     // }
+
+//     // // If user wants different method, check if it's available
+//     // if (deliveryMethod === "email" && !user.email) {
+//     //   deliveryMethod = "sms";
+//     // } else if (deliveryMethod === "sms" && !user.mobile) {
+//     //   deliveryMethod = "email";
+//     // }
+// console.log("user....", user);
+//     try {
+//       if (user.email) {
+//         await sendEmail(
+//           user.email,
+//           "Giantogram Password Reset Code",
+//           `Hello,
+
+// We received a request to reset your password. Please use the reset code below to create a new password:
+
+// Reset Code: ${resetCode}
+
+// This code will expire in 15 minutes. If you didn't request a password reset, you can safely ignore this email.
+
+// Thanks,
+// Giantogram`
+//         );
+//       } else if ( user.mobile) {
+//         await sendSMS(
+//           user.mobile,
+//           `Giantogram password reset code: ${resetCode}. This code will expire in 15 minutes.`
+//         );
+//       }
+
+//       res.status(200).json({
+//         code: 200,
+//         message:
+//           "If an account with that identifier exists, a password reset code has been sent.",
+//       });
+//     } catch (deliveryError) {
+//       console.error("Password reset delivery error:", deliveryError);
+//       res.status(200).json({
+//         code: 200,
+//         message:
+//           "If an account with that identifier exists, a password reset code has been sent.",
+//       });
+//     }
+//   } catch (error) {
+//     console.error("Forgot password error:", error);
+//     res
+//       .status(500)
+//       .json({ code: "UNKNOWN_ERROR", message: "An unexpected error occurred" });
+//   }
+// };
+
 const forgotPassword = async (req, res) => {
   try {
-    const { identifier, preferredMethod } = req.body; // identifier can be email or mobile
+    const { identifier, preferredMethod } = req.body;
+
+    if (!identifier) {
+      return res.status(400).json({
+        code: "MISSING_IDENTIFIER",
+        message: "Email, mobile or username is required",
+      });
+    }
+
+    const identifierType = getIdentifierType(identifier);
+    if (!identifierType) {
+      return res.status(400).json({
+        code: "INVALID_IDENTIFIER",
+        message: "Invalid email, mobile or username format",
+      });
+    }
+
+    const query =
+      identifierType === "email"
+        ? { email: identifier }
+        : identifierType === "mobile"
+        ? { mobile: identifier }
+        : identifierType === "username"
+        ? { username: identifier }
+        : null;
+
+    const user = await User.findOne(query);
+
+    if (!user) {
+      return res.status(401).json({
+        code: "USER_NOT_FOUND",
+        message: "User not found",
+      });
+    }
+
+    // If identifier is username and recovery options exist, return them
+    if (
+      identifierType === "username" &&
+      ((user.recoveryEmails && user.recoveryEmails.length > 0) ||
+        (user.recoveryPhones && user.recoveryPhones.length > 0))
+    ) {
+      const maskedEmails = user.recoveryEmails.map(maskEmail);
+      const maskedPhones = user.recoveryPhones.map(maskPhone);
+
+      return res.status(200).json({
+        code: "CHOOSE_RECOVERY_METHOD",
+        redirect: true,
+        emails: maskedEmails,
+        phones: maskedPhones,
+        identifier: user.username,
+        message: "Multiple recovery options found. Please choose one.",
+      });
+    }
+
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+
+    user.passwordResetCode = resetCode;
+    user.passwordResetExpiry = expiry;
+    await user.save({ validateBeforeSave: false });
+
+    try {
+      if (user.email) {
+        await sendEmail(
+          user.email,
+          "Giantogram Password Reset Code",
+          `Hello,
+
+We received a request to reset your password. Use this code:
+
+Reset Code: ${resetCode}
+
+It expires in 15 minutes.
+
+– Giantogram`
+        );
+      } else if (user.mobile) {
+        await sendSMS(
+          user.mobile,
+          `Giantogram reset code: ${resetCode}. Expires in 15 mins.`
+        );
+      }
+
+      res.status(200).json({
+        code: 200,
+        message: "Reset code sent if contact method exists.",
+      });
+    } catch (deliveryError) {
+      console.error("Delivery failed:", deliveryError);
+      res.status(500).json({
+        code: "DELIVERY_FAILED",
+        message: "Failed to send reset code",
+      });
+    }
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    res.status(500).json({
+      code: "UNKNOWN_ERROR",
+      message: "An unexpected error occurred",
+    });
+  }
+};
+
+function maskEmail(email) {
+  const [local, domain] = email.split("@");
+  return local.slice(0, 2) + "****@" + domain;
+}
+
+function maskPhone(phone) {
+  return phone.replace(/.(?=.{4})/g, "*");
+}
+
+const forgotPasswordUsername = async (req, res) => {
+  try {
+    const { username, identifier, preferredMethod } = req.body; // identifier can be email or mobile
 
     if (!identifier) {
       return res.status(400).json({
@@ -528,25 +794,24 @@ const forgotPassword = async (req, res) => {
     }
 
     const identifierType = getIdentifierType(identifier);
-    if (!identifierType) {
-      return res.status(400).json({
-        code: "INVALID_IDENTIFIER",
-        message: "Invalid email or mobile format",
-      });
-    }
 
-    // Find user by email or mobile
-    const query =
-      identifierType === "email"
-        ? { email: identifier }
-        : { mobile: identifier };
-    const user = await User.findOne(query);
+    const user = await User.findOne({ username });
 
     if (!user) {
       // For security, don't reveal if email/mobile exists or not
       return res.status(401).json({
         code: "USER_NOT_FOUND",
         message: "User not found",
+      });
+    }
+
+    if (
+      !user.recoveryEmails.includes(identifier) &&
+      !user.recoveryPhones.includes(identifier)
+    ) {
+      return res.status(400).json({
+        code: "INVALID_RECOVERY_METHOD",
+        message: "Identifier is not a valid recovery method for this user",
       });
     }
 
@@ -561,26 +826,11 @@ const forgotPassword = async (req, res) => {
     // Determine delivery method for reset code
     let deliveryMethod = preferredMethod;
 
-    // If no preferred method specified, use the same method as identifier
-    if (!deliveryMethod) {
-      if (identifierType === "email") {
-        deliveryMethod = "email";
-      } else if (identifierType === "mobile") {
-        deliveryMethod = "sms";
-      }
-    }
-
-    // If user wants different method, check if it's available
-    if (deliveryMethod === "email" && !user.email) {
-      deliveryMethod = "sms";
-    } else if (deliveryMethod === "sms" && !user.mobile) {
-      deliveryMethod = "email";
-    }
-
     try {
-      if (deliveryMethod === "email" && user.email) {
+      console.log("identifierType", identifierType);
+      if (identifierType === "email") {
         await sendEmail(
-          user.email,
+          identifier,
           "Giantogram Password Reset Code",
           `Hello,
 
@@ -593,9 +843,9 @@ This code will expire in 15 minutes. If you didn't request a password reset, you
 Thanks,
 Giantogram`
         );
-      } else if (deliveryMethod === "sms" && user.mobile) {
+      } else if (identifierType === "sms") {
         await sendSMS(
-          user.mobile,
+          identifier,
           `Giantogram password reset code: ${resetCode}. This code will expire in 15 minutes.`
         );
       }
@@ -626,10 +876,32 @@ const resetPassword = async (req, res) => {
     const { identifier, resetCode, newPassword } = req.body;
 
     console.log({ identifier, resetCode, newPassword });
-    if (!identifier || !resetCode || !newPassword) {
+
+    if (!newPassword) {
       return res.status(400).json({
         code: "MISSING_FIELDS",
-        message: "Identifier, reset code, and new password are required",
+        message: "Enter Password",
+      });
+    }
+
+    if (newPassword?.trim()?.length < 8) {
+      return res.status(400).json({
+        code: "MISSING_FIELDS",
+        message: "Password must contain 8 characters",
+      });
+    }
+
+    if (!resetCode || resetCode?.trim()?.length === 0) {
+      return res.status(400).json({
+        code: "MISSING_FIELDS",
+        message: "Enter OTP",
+      });
+    }
+
+    if (!identifier) {
+      return res.status(400).json({
+        code: "MISSING_FIELDS",
+        message: "Username, monile or email is required",
       });
     }
 
@@ -637,15 +909,24 @@ const resetPassword = async (req, res) => {
     if (!identifierType) {
       return res.status(400).json({
         code: "INVALID_IDENTIFIER",
-        message: "Invalid email or mobile format",
+        message: "Invalid email, mobile or username format",
       });
     }
 
     // Find user by email or mobile
+    // const query =
+    //   identifierType === "email"
+    //     ? { email: identifier }
+    //     : { mobile: identifier };
+
     const query =
       identifierType === "email"
         ? { email: identifier }
-        : { mobile: identifier };
+        : identifierType === "mobile"
+        ? { mobile: identifier }
+        : identifierType === "username"
+        ? { username: identifier }
+        : null;
     const user = await User.findOne(query);
 
     if (!user) {
@@ -726,7 +1007,7 @@ const resend2FA = async (req, res) => {
     if (!identifier) {
       return res.status(400).json({
         code: "MISSING_FIELDS",
-        message: "Identifier (email or mobile) is required",
+        message: "Email, mobile or username is required",
       });
     }
 
@@ -734,7 +1015,7 @@ const resend2FA = async (req, res) => {
     if (!identifierType) {
       return res.status(400).json({
         code: "INVALID_IDENTIFIER",
-        message: "Invalid email or mobile format",
+        message: "Invalid email, mobile or username format",
       });
     }
 
@@ -742,7 +1023,12 @@ const resend2FA = async (req, res) => {
     const query =
       identifierType === "email"
         ? { email: identifier }
-        : { mobile: identifier };
+        : identifierType === "mobile"
+        ? { mobile: identifier }
+        : identifierType === "username"
+        ? { username: identifier }
+        : null;
+
     const user = await User.findOne(query);
 
     if (!user) {
@@ -836,6 +1122,75 @@ Giantogram`
       code: "UNKNOWN_ERROR",
       message: "An unexpected error occurred",
     });
+  }
+};
+
+const setPassword = async (req, res) => {
+  console.log("Request Body:", req.body);
+
+  try {
+    const { password } = req.body;
+
+    const { user } = req; // The user is now attached to `req` by the `auth` middleware
+
+    console.log("user....", user, password);
+    if (!password) {
+      return res.status(400).json({
+        code: "MISSING_FIELDS",
+        message: "Enter Passowrd",
+      });
+    }
+
+    if (password?.trim()?.length < 8) {
+      return res.status(400).json({
+        code: "MISSING_FIELDS",
+        message: "Password must contain 8 characters",
+      });
+    }
+    // console.log("usr....", req)
+    const user1 = await User.findOne(user._id);
+
+    // Update password
+    user1.password = password;
+
+    await user1.save({ validateBeforeSave: false });
+
+    // Send confirmation to both email and mobile if available
+    const confirmationMessage = `Hello,
+
+Your password has been successfully set.
+
+Thanks,
+Giantogram`;
+
+    try {
+      if (user1.email) {
+        await sendEmail(
+          user1.email,
+          "Giantogram Password Set",
+          confirmationMessage
+        );
+      }
+      if (user1.mobile) {
+        await sendSMS(
+          user1.mobile,
+          "Giantogram: Your password has been successfully set."
+        );
+      }
+    } catch (notificationError) {
+      console.error("Password change notification error:", notificationError);
+      // Don't fail the password reset if notification fails
+    }
+
+    res.status(200).json({
+      code: 200,
+      message: "Password has been successfully set",
+    });
+  } catch (error) {
+    console.error("Set password error:", error);
+    res
+      .status(500)
+      .json({ code: "UNKNOWN_ERROR", message: "An unexpected error occurred" });
   }
 };
 
@@ -964,4 +1319,6 @@ module.exports = {
   resetPassword,
   resend2FA,
   uploadProfilePicture,
+  setPassword,
+  forgotPasswordUsername,
 };

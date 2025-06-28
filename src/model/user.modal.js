@@ -153,9 +153,13 @@ const jwt = require("jsonwebtoken");
 
 // module.exports = User;
 
-
 const userSchema = new mongoose.Schema(
   {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
     username: {
       type: String,
       required: true,
@@ -178,7 +182,7 @@ const userSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: true,
+      required: false,
       minlength: 6,
     },
     profilePicture: {
@@ -212,6 +216,8 @@ const userSchema = new mongoose.Schema(
     },
     passwordResetCode: { type: String, default: null },
     passwordResetExpiry: { type: Date, default: null },
+    recoveryEmails: { type: [String], default: [] },
+    recoveryPhones: { type: [String], default: [] },
   },
   {
     timestamps: true,
@@ -219,27 +225,27 @@ const userSchema = new mongoose.Schema(
 );
 
 // Create custom indexes with proper sparse configuration
-userSchema.index(
-  { email: 1 }, 
-  { 
-    unique: true, 
-    sparse: true,
-    partialFilterExpression: { 
-      email: { $exists: true, $ne: null, $ne: "" } 
-    }
-  }
-);
+// userSchema.index(
+//   { email: 1 },
+//   {
+//     unique: true,
+//     sparse: true,
+//     partialFilterExpression: {
+//       email: { $exists: true, $ne: null, $ne: "" },
+//     },
+//   }
+// );
 
-userSchema.index(
-  { mobile: 1 }, 
-  { 
-    unique: true, 
-    sparse: true,
-    partialFilterExpression: { 
-      mobile: { $exists: true, $ne: null, $ne: "" } 
-    }
-  }
-);
+// userSchema.index(
+//   { mobile: 1 },
+//   {
+//     unique: true,
+//     sparse: true,
+//     partialFilterExpression: {
+//       mobile: { $exists: true, $ne: null, $ne: "" },
+//     },
+//   }
+// );
 
 // Pre-save hook to hash the password before saving
 userSchema.pre("save", async function (next) {
@@ -255,8 +261,8 @@ userSchema.methods.generateAuthToken = function () {
   const user = this;
   const token = jwt.sign(
     { _id: user._id, username: user.username },
-    process.env.JWT_SECRET || "your_jwt_secret", // Use environment variable
-    { expiresIn: "1h" }
+    process.env.JWT_SECRET || "your_jwt_secret" // Use environment variable
+    // { expiresIn: "1h" }
   );
   return token;
 };

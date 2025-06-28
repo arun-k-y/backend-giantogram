@@ -55,13 +55,20 @@ app.listen(PORT, () => {
 
 const connectWithRetry = () => {
   mongoose
-    .connect(
-      "mongodb+srv://test:J62woiyoKXiosIUn@cluster0.okfsytr.mongodb.net/auth",
-      { useNewUrlParser: true, useUnifiedTopology: true }
-    )
+    // .connect(
+    //   "mongodb+srv://test:J62woiyoKXiosIUn@cluster0.okfsytr.mongodb.net/auth",
+    //   { useNewUrlParser: true, useUnifiedTopology: true }
+    // )
+
+    .connect("mongodb://127.0.0.1:27017/auth", {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    })
     .then(() => {
       console.log("Connected to MongoDB!");
-      console.log(`[${new Date().toISOString()}] Database connection established`);
+      console.log(
+        `[${new Date().toISOString()}] Database connection established`
+      );
     })
     .catch((err) => {
       console.error("Failed to connect to MongoDB:", err);
@@ -72,15 +79,16 @@ const connectWithRetry = () => {
 
 connectWithRetry();
 
-mongoose.connection.on('error', (err) => {
+mongoose.connection.on("error", (err) => {
   console.error(`[${new Date().toISOString()}] MongoDB connection error:`, err);
 });
 
-mongoose.connection.on('disconnected', () => {
-  console.log(`[${new Date().toISOString()}] MongoDB disconnected. Attempting to reconnect...`);
+mongoose.connection.on("disconnected", () => {
+  console.log(
+    `[${new Date().toISOString()}] MongoDB disconnected. Attempting to reconnect...`
+  );
   connectWithRetry();
 });
-
 
 // app.use("/uploads", express.static("uploads"));
 // app.use("/uploads", express.static(path.join(__dirname, "uploads")));
