@@ -55,15 +55,15 @@ app.listen(PORT, () => {
 
 const connectWithRetry = () => {
   mongoose
-    // .connect(
-    //   "mongodb+srv://test:J62woiyoKXiosIUn@cluster0.okfsytr.mongodb.net/auth",
-    //   { useNewUrlParser: true, useUnifiedTopology: true }
-    // )
+    .connect(
+      "mongodb+srv://test:J62woiyoKXiosIUn@cluster0.okfsytr.mongodb.net/auth",
+      { useNewUrlParser: true, useUnifiedTopology: true }
+    )
 
-    .connect("mongodb://127.0.0.1:27017/auth", {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    })
+    // .connect("mongodb://127.0.0.1:27017/auth", {
+    //   useNewUrlParser: true,
+    //   useUnifiedTopology: true,
+    // })
     .then(() => {
       console.log("Connected to MongoDB!");
       console.log(
