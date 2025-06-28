@@ -37,7 +37,7 @@ const jwt = require("jsonwebtoken");
 const User = require("../model/user.modal.js"); // make sure this path is correct
 
 const auth = async (req, res, next) => {
-    console.log("inside auth")
+  console.log("inside auth");
 
   try {
     const authHeader = req.header("Authorization");
@@ -55,13 +55,15 @@ const auth = async (req, res, next) => {
     const user = await User.findById(decoded._id);
 
     if (!user) {
-      return res.status(401).json({ error: "User not found." });
+      return res.status(401).json({ code: 401, message: "User not found." });
     }
 
-    req.user = user; // Attach full user to req
+    req.user = user; 
     next();
   } catch (err) {
-    return res.status(401).json({ error: "Invalid or expired token." });
+    return res
+      .status(401)
+      .json({ code: 401, message: "Invalid or expired token." });
   }
 };
 

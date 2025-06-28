@@ -96,10 +96,14 @@ router.post("/recovery", async (req, res) => {
           "recoveryEmails recoveryPhones mobile email"
         );
         if (!user) {
-          return res.status(401).json({ error: "User not found." });
+          return res
+            .status(401)
+            .json({ code: 401, message: "User not found." });
         }
       } catch (err) {
-        return res.status(401).json({ error: "Invalid or expired token." });
+        return res
+          .status(401)
+          .json({ code: 401, message: "Invalid or expired token." });
       }
     } else {
       // If no token, try to find user using the username in the body
