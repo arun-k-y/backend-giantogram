@@ -8,88 +8,17 @@ const {
 } = require("../utils/validators");
 
 const cloudinary = require("../config/cloudinary.js");
+function maskEmail(email) {
+  const [local, domain] = email.split("@");
+  return local.slice(0, 2) + "****@" + domain;
+}
 
-// const signup = async (req, res) => {
-//   try {
-//     const { username, email, mobile, password } = req.body;
-
-//     // Check for required fields
-//     if (!username || (!email && !mobile) || !password) {
-//       return res.status(400).send({
-//         code: "MISSING_FIELDS",
-//         message:
-//           "Username, password, and at least one of email or mobile are required",
-//       });
-//     }
-
-//     // Validate email format if provided
-//     if (email && !isValidEmail(email)) {
-//       return res.status(400).send({
-//         code: "INVALID_EMAIL",
-//         message: "Invalid email format",
-//       });
-//     }
-
-//     // Validate mobile format if provided
-//     if (mobile && !isValidMobile(mobile)) {
-//       return res.status(400).send({
-//         code: "INVALID_MOBILE",
-//         message: "Invalid mobile number format",
-//       });
-//     }
-
-//     // Create and save the new user
-//     const user = new User({ username, email, mobile, password });
-//     await user.save();
-//     const userObj = user.toObject();
-//     delete userObj?.password;
-//     return res.status(201).send({ user: userObj });
-//   } catch (error) {
-//     // Handle validation errors
-//     if (error.name === "ValidationError") {
-//       const errors = Object.values(error.errors).map((err) => err.message);
-//       return res.status(400).send({
-//         code: "VALIDATION_ERROR",
-//         message: "Validation failed",
-//         errors,
-//       });
-//     }
-
-//     // Handle duplicate key errors
-//     if (error.code === 11000) {
-//       const duplicateKey = Object.keys(error.keyValue)[0];
-//       return res.status(400).send({
-//         code: "DUPLICATE_KEY_ERROR",
-//         message: `Duplicate key error: ${duplicateKey} already exists`,
-//         keyPattern: error.keyPattern,
-//         keyValue: error.keyValue,
-//       });
-//     }
-
-//     // Log unexpected errors
-//     console.error("Signup error:", error);
-
-//     // Return generic error response
-//     return res.status(500).send({
-//       code: "UNKNOWN_ERROR",
-//       message: "An unexpected error occurred",
-//       error: error.message,
-//     });
-//   }
-// };
-
+function maskPhone(phone) {
+  return phone.replace(/.(?=.{4})/g, "*");
+}
 const signup = async (req, res) => {
   try {
     const { name, username, email, mobile, password, gender, dob } = req.body;
-
-    // if (!username || (!email && !mobile) || !password || !dob) {
-    //   return res.status(400).send({
-    //     code: "MISSING_FIELDS",
-    //     message:
-    //       "Username, password, DOB, and either email or mobile are required",
-    //   });
-    // }
-
     if (!username || (!email && !mobile) || !name || !dob) {
       return res.status(400).send({
         code: "MISSING_FIELDS",
@@ -668,9 +597,334 @@ const reactivateUser = async (req, res) => {
 //   }
 // };
 
+// const forgotPassword = async (req, res) => {
+//   try {
+//     const { identifier, preferredMethod } = req.body;
+
+//     if (!identifier) {
+//       return res.status(400).json({
+//         code: "MISSING_IDENTIFIER",
+//         message: "Email, mobile or username is required",
+//       });
+//     }
+
+//     const identifierType = getIdentifierType(identifier);
+//     if (!identifierType) {
+//       return res.status(400).json({
+//         code: "INVALID_IDENTIFIER",
+//         message: "Invalid email, mobile or username format",
+//       });
+//     }
+
+//     const query =
+//       identifierType === "email"
+//         ? { email: identifier }
+//         : identifierType === "mobile"
+//         ? { mobile: identifier }
+//         : identifierType === "username"
+//         ? { username: identifier }
+//         : null;
+
+//     const user = await User.findOne(query);
+
+//     if (!user) {
+//       return res.status(401).json({
+//         code: "USER_NOT_FOUND",
+//         message: "User not found",
+//       });
+//     }
+
+//     // If identifier is username and recovery options exist, return them
+//     if (
+//       identifierType === "username" &&
+//       ((user.recoveryEmails && user.recoveryEmails.length > 0) ||
+//         (user.recoveryPhones && user.recoveryPhones.length > 0))
+//     ) {
+//       const maskedEmails = user.recoveryEmails.map(maskEmail);
+//       const maskedPhones = user.recoveryPhones.map(maskPhone);
+
+//       return res.status(200).json({
+//         code: "CHOOSE_RECOVERY_METHOD",
+//         redirect: true,
+//         emails: maskedEmails,
+//         phones: maskedPhones,
+//         identifier: user.username,
+//         message: "Multiple recovery options found. Please choose one.",
+//       });
+//     }
+
+//     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+//     const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+
+//     user.passwordResetCode = resetCode;
+//     user.passwordResetExpiry = expiry;
+//     await user.save({ validateBeforeSave: false });
+
+//     try {
+//       if (user.email) {
+//         await sendEmail(
+//           user.email,
+//           "Giantogram Password Reset Code",
+//           `Hello,
+
+// We received a request to reset your password. Use this code:
+
+// Reset Code: ${resetCode}
+
+// It expires in 15 minutes.
+
+// – Giantogram`
+//         );
+//       } else if (user.mobile) {
+//         await sendSMS(
+//           user.mobile,
+//           `Giantogram reset code: ${resetCode}. Expires in 15 mins.`
+//         );
+//       }
+
+//       res.status(200).json({
+//         code: 200,
+//         message: "Reset code sent if contact method exists.",
+//       });
+//     } catch (deliveryError) {
+//       console.error("Delivery failed:", deliveryError);
+//       res.status(500).json({
+//         code: "DELIVERY_FAILED",
+//         message: "Failed to send reset code",
+//       });
+//     }
+//   } catch (error) {
+//     console.error("Forgot password error:", error);
+//     res.status(500).json({
+//       code: "UNKNOWN_ERROR",
+//       message: "An unexpected error occurred",
+//     });
+//   }
+// };
+
+// const forgotPassword = async (req, res) => {
+//   try {
+//     const { identifier, preferredMethod } = req.body;
+//     console.log("🔐 Forgot Password request received", { identifier, preferredMethod });
+
+//     if (!identifier) {
+//       console.warn("⚠️ Missing identifier in request body");
+//       return res.status(400).json({
+//         code: "MISSING_IDENTIFIER",
+//         message: "Email, mobile or username is required",
+//       });
+//     }
+
+//     const identifierType = getIdentifierType(identifier);
+//     console.log("📌 Detected identifier type:", identifierType);
+
+//     if (!identifierType) {
+//       console.warn("❌ Invalid identifier format:", identifier);
+//       return res.status(400).json({
+//         code: "INVALID_IDENTIFIER",
+//         message: "Invalid email, mobile or username format",
+//       });
+//     }
+
+//     const query =
+//       identifierType === "email"
+//         ? { email: identifier }
+//         : identifierType === "mobile"
+//         ? { mobile: identifier }
+//         : identifierType === "username"
+//         ? { username: identifier }
+//         : null;
+
+//     console.log("🔍 Querying user with:", query);
+//     const user = await User.findOne(query);
+
+//     if (!user) {
+//       console.warn("👤 User not found for identifier:", identifier);
+//       return res.status(401).json({
+//         code: "USER_NOT_FOUND",
+//         message: "User not found",
+//       });
+//     }
+
+//     console.log("✅ User found:", {
+//       id: user._id,
+//       username: user.username,
+//       email: user.email,
+//       mobile: user.mobile,
+//     });
+
+//     if (
+//       identifierType === "username" &&
+//       ((user.recoveryEmails && user.recoveryEmails.length > 0) ||
+//         (user.recoveryPhones && user.recoveryPhones.length > 0))
+//     ) {
+//       const maskedEmails = user.recoveryEmails.map(maskEmail);
+//       const maskedPhones = user.recoveryPhones.map(maskPhone);
+
+//       console.log("🔄 Recovery options found for username:", {
+//         emails: maskedEmails,
+//         phones: maskedPhones,
+//       });
+
+//       return res.status(200).json({
+//         code: "CHOOSE_RECOVERY_METHOD",
+//         redirect: true,
+//         emails: maskedEmails,
+//         phones: maskedPhones,
+//         identifier: user.username,
+//         message: "Multiple recovery options found. Please choose one.",
+//       });
+//     }
+
+//     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+//     const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+
+//     user.passwordResetCode = resetCode;
+//     user.passwordResetExpiry = expiry;
+//     await user.save({ validateBeforeSave: false });
+
+//     console.log("📨 Generated reset code:", resetCode, "Expires at:", expiry.toISOString());
+
+//     try {
+//       if (user.email) {
+//         console.log("📧 Sending reset code to email:", user.email);
+//         await sendEmail(
+//           user.email,
+//           "Giantogram Password Reset Code",
+//           `Hello,
+
+// We received a request to reset your password. Use this code:
+
+// Reset Code: ${resetCode}
+
+// It expires in 15 minutes.
+
+// – Giantogram`
+//         );
+//       } else if (user.mobile) {
+//         console.log("📱 Sending reset code to mobile:", user.mobile);
+//         await sendSMS(
+//           user.mobile,
+//           `Giantogram reset code: ${resetCode}. Expires in 15 mins.`
+//         );
+//       } else {
+//         console.warn("⚠️ No email or mobile found to send the reset code.");
+//       }
+
+//       console.log("✅ Reset code sent successfully.");
+//       res.status(200).json({
+//         code: 200,
+//         message: "Reset code sent if contact method exists.",
+//       });
+//     } catch (deliveryError) {
+//       console.error("🚨 Delivery failed:", deliveryError);
+//       res.status(500).json({
+//         code: "DELIVERY_FAILED",
+//         message: "Failed to send reset code",
+//       });
+//     }
+//   } catch (error) {
+//     console.error("🔥 Forgot password error:", error);
+//     res.status(500).json({
+//       code: "UNKNOWN_ERROR",
+//       message: "An unexpected error occurred",
+//     });
+//   }
+// };
+
+
+// const forgotPassword = async (req, res) => {
+//   try {
+//     const { identifier } = req.body;
+
+//     if (!identifier) {
+//       return res.status(400).json({
+//         code: "MISSING_IDENTIFIER",
+//         message: "Email, mobile or username is required",
+//       });
+//     }
+
+//     const identifierType = getIdentifierType(identifier);
+//     if (!identifierType) {
+//       return res.status(400).json({
+//         code: "INVALID_IDENTIFIER",
+//         message: "Invalid email, mobile or username format",
+//       });
+//     }
+
+//     let users = [];
+
+//     if (identifierType === "username") {
+//       const user = await User.findOne({ username: identifier });
+//       if (!user) {
+//         return res.status(401).json({
+//           code: "USER_NOT_FOUND",
+//           message: "Username not found",
+//         });
+//       }
+//       users = [user];
+//     } else if (identifierType === "email") {
+//       users = await User.find({ email: identifier });
+//     } else if (identifierType === "mobile") {
+//       users = await User.find({ mobile: identifier });
+//     }
+
+//     if (!users || users.length === 0) {
+//       return res.status(401).json({
+//         code: "USER_NOT_FOUND",
+//         message: "No users found linked to the provided identifier",
+//       });
+//     }
+
+//     // If multiple usernames are found, return options
+//     if (users.length > 1) {
+//       const usernames = users.map((u) => ({
+//         id: u._id,
+//         username: u.username,
+//       }));
+
+//       return res.status(200).json({
+//         code: "MULTIPLE_USERS_FOUND",
+//         message: "Multiple accounts found. Please choose a username.",
+//         usernames,
+//       });
+//     }
+
+//     // Proceed to send reset code to the single matched user
+//     const user = users[0];
+//     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+//     const expiry = new Date(Date.now() + 15 * 60 * 1000);
+
+//     user.passwordResetCode = resetCode;
+//     user.passwordResetExpiry = expiry;
+//     await user.save({ validateBeforeSave: false });
+
+//     if (user.email) {
+//       await sendEmail(
+//         user.email,
+//         "Giantogram Password Reset Code",
+//         `Your reset code is ${resetCode}. It will expire in 15 minutes.`
+//       );
+//     } else if (user.mobile) {
+//       await sendSMS(user.mobile, `Reset code: ${resetCode}. Valid for 15 mins.`);
+//     }
+
+//     return res.status(200).json({
+//       code: "RESET_CODE_SENT",
+//       message: "Reset code sent to your email or mobile.",
+//     });
+//   } catch (error) {
+//     console.error("Forgot password error:", error);
+//     res.status(500).json({
+//       code: "SERVER_ERROR",
+//       message: "An unexpected error occurred.",
+//     });
+//   }
+// };
+
 const forgotPassword = async (req, res) => {
   try {
-    const { identifier, preferredMethod } = req.body;
+    const { identifier } = req.body;
 
     if (!identifier) {
       return res.status(400).json({
@@ -687,102 +941,98 @@ const forgotPassword = async (req, res) => {
       });
     }
 
-    const query =
-      identifierType === "email"
-        ? { email: identifier }
-        : identifierType === "mobile"
-        ? { mobile: identifier }
-        : identifierType === "username"
-        ? { username: identifier }
-        : null;
+    // 💡 1. If identifier is a username → return recovery options if present
+    if (identifierType === "username") {
+      const user = await User.findOne({ username: identifier });
 
-    const user = await User.findOne(query);
+      if (!user) {
+        return res.status(401).json({
+          code: "USER_NOT_FOUND",
+          message: "Username not found",
+        });
+      }
 
-    if (!user) {
+      const hasRecoveryOptions =
+        (user.recoveryEmails && user.recoveryEmails.length > 0) ||
+        (user.recoveryPhones && user.recoveryPhones.length > 0);
+
+      if (hasRecoveryOptions) {
+        return res.status(200).json({
+          code: "CHOOSE_RECOVERY_METHOD",
+          redirect: true,
+          identifier: user.username,
+          emails: user.recoveryEmails.map(maskEmail),
+          phones: user.recoveryPhones.map(maskPhone),
+          message: "Multiple recovery options found. Please choose one.",
+        });
+      }
+
+      // Proceed to send reset code directly if no recovery options
+      return sendResetCode(user, res);
+    }
+
+    // 💡 2. If identifier is email or mobile → return linked usernames
+    const query = identifierType === "email" ? { email: identifier } : { mobile: identifier };
+    const users = await User.find(query);
+
+    if (!users || users.length === 0) {
       return res.status(401).json({
         code: "USER_NOT_FOUND",
-        message: "User not found",
+        message: "No accounts found linked to this " + identifierType,
       });
     }
 
-    // If identifier is username and recovery options exist, return them
-    if (
-      identifierType === "username" &&
-      ((user.recoveryEmails && user.recoveryEmails.length > 0) ||
-        (user.recoveryPhones && user.recoveryPhones.length > 0))
-    ) {
-      const maskedEmails = user.recoveryEmails.map(maskEmail);
-      const maskedPhones = user.recoveryPhones.map(maskPhone);
-
+    if (users.length > 1) {
       return res.status(200).json({
-        code: "CHOOSE_RECOVERY_METHOD",
-        redirect: true,
-        emails: maskedEmails,
-        phones: maskedPhones,
-        identifier: user.username,
-        message: "Multiple recovery options found. Please choose one.",
+        code: "MULTIPLE_USERS_FOUND",
+        message: "Multiple accounts found. Please choose a username.",
+        usernames: users.map((u) => ({ id: u._id, username: u.username })),
       });
     }
 
+    // Single user → send code
+    return sendResetCode(users[0], res);
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    res.status(500).json({
+      code: "SERVER_ERROR",
+      message: "An unexpected error occurred.",
+    });
+  }
+};
+
+// 🔄 Reusable reset code handler
+async function sendResetCode(user, res) {
+  try {
     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+    const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 min expiry
 
     user.passwordResetCode = resetCode;
     user.passwordResetExpiry = expiry;
     await user.save({ validateBeforeSave: false });
 
-    try {
-      if (user.email) {
-        await sendEmail(
-          user.email,
-          "Giantogram Password Reset Code",
-          `Hello,
-
-We received a request to reset your password. Use this code:
-
-Reset Code: ${resetCode}
-
-It expires in 15 minutes.
-
-– Giantogram`
-        );
-      } else if (user.mobile) {
-        await sendSMS(
-          user.mobile,
-          `Giantogram reset code: ${resetCode}. Expires in 15 mins.`
-        );
-      }
-
-      res.status(200).json({
-        code: 200,
-        message: "Reset code sent if contact method exists.",
-      });
-    } catch (deliveryError) {
-      console.error("Delivery failed:", deliveryError);
-      res.status(500).json({
-        code: "DELIVERY_FAILED",
-        message: "Failed to send reset code",
-      });
+    if (user.email) {
+      await sendEmail(user.email, "Giantogram Reset Code", `Reset code: ${resetCode}`);
+    } else if (user.mobile) {
+      await sendSMS(user.mobile, `Reset code: ${resetCode}`);
     }
+
+    return res.status(200).json({
+      code: "RESET_CODE_SENT",
+      message: "Reset code sent successfully.",
+    });
   } catch (error) {
-    console.error("Forgot password error:", error);
-    res.status(500).json({
-      code: "UNKNOWN_ERROR",
-      message: "An unexpected error occurred",
+    console.error("Send code failed:", error);
+    return res.status(500).json({
+      code: "DELIVERY_FAILED",
+      message: "Failed to send reset code.",
     });
   }
-};
-
-function maskEmail(email) {
-  const [local, domain] = email.split("@");
-  return local.slice(0, 2) + "****@" + domain;
 }
 
-function maskPhone(phone) {
-  return phone.replace(/.(?=.{4})/g, "*");
-}
 
-const forgotPasswordUsername = async (req, res) => {
+
+const sendResetCodeForUsernameRecovery = async (req, res) => {
   try {
     const { username, identifier, preferredMethod } = req.body; // identifier can be email or mobile
 
@@ -843,7 +1093,7 @@ This code will expire in 15 minutes. If you didn't request a password reset, you
 Thanks,
 Giantogram`
         );
-      } else if (identifierType === "sms") {
+      } else if (identifierType === "mobile") {
         await sendSMS(
           identifier,
           `Giantogram password reset code: ${resetCode}. This code will expire in 15 minutes.`
@@ -1194,75 +1444,6 @@ Giantogram`;
   }
 };
 
-// const uploadProfilePicture = async (req, res) => {
-//   try {
-//     if (!req.file) {
-//       return res.status(400).json({ code: "NO_FILE", message: "No file uploaded" });
-//     }
-
-//     const user = req.user;
-//     user.profilePicture = `/uploads/profile_pictures/${req.file.filename}`;
-//     await user.save();
-
-//     res.status(200).json({
-//       code: 200,
-//       message: "Profile picture uploaded successfully",
-//       profilePicture: user.profilePicture,
-//     });
-//   } catch (err) {
-//     console.error("Upload error:", err);
-//     res.status(500).json({ code: "UPLOAD_ERROR", message: err.message });
-//   }
-// };
-
-// const uploadProfilePicture = async (req, res) => {
-//   try {
-//     if (!req.file) {
-//       return res
-//         .status(400)
-//         .json({ code: "NO_FILE", message: "No file uploaded" });
-//     }
-
-//     const user = req.user;
-//     user.profilePicture = `/uploads/profile_pictures/${req.file.filename}`;
-//     await user.save({ validateBeforeSave: false });
-//     res.status(200).json({
-//       code: 200,
-//       message: "Profile picture uploaded successfully",
-//       profilePicture: user.profilePicture,
-//     });
-//   } catch (err) {
-//     console.error("Upload error:", err);
-//     res.status(500).json({ code: "UPLOAD_ERROR", message: err.message });
-//   }
-// };
-
-// const uploadProfilePicture = async (req, res) => {
-//   try {
-//     if (!req.file) {
-//       return res.status(400).json({ code: "NO_FILE", message: "No file uploaded" });
-//     }
-
-//     const result = await cloudinary.uploader.upload(req.file.path, {
-//       folder: "profile_pictures",
-//       resource_type: "image",
-//     });
-
-//     const user = req.user;
-//     user.profilePicture = result.secure_url; // Cloudinary public URL
-//     await user.save({ validateBeforeSave: false });
-
-//     res.status(200).json({
-//       code: 200,
-//       message: "Uploaded successfully",
-//       profilePicture: user.profilePicture,
-//     });
-//   } catch (err) {
-//     console.error("Cloudinary upload error:", err);
-//     res.status(500).json({ code: "UPLOAD_ERROR", message: err.message });
-//   }
-// };
-
 const uploadProfilePicture = async (req, res) => {
   try {
     if (!req.file) {
@@ -1308,6 +1489,89 @@ const uploadProfilePicture = async (req, res) => {
   }
 };
 
+
+
+const sendResetAfterUsernameSelection = async (req, res) => {
+  try {
+    const { identifier, username } = req.body;
+
+    if (!identifier || !username) {
+      return res.status(400).json({
+        code: "MISSING_DATA",
+        message: "Both username and identifier are required",
+      });
+    }
+
+    const identifierType = getIdentifierType(identifier);
+
+    if (!identifierType) {
+      return res.status(400).json({
+        code: "INVALID_IDENTIFIER",
+        message: "Invalid email or mobile format",
+      });
+    }
+
+    const user = await User.findOne({ username });
+
+    if (!user) {
+      return res.status(404).json({
+        code: "USER_NOT_FOUND",
+        message: "Username does not exist",
+      });
+    }
+
+    // Generate OTP
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 min expiry
+
+    user.passwordResetCode = resetCode;
+    user.passwordResetExpiry = expiry;
+    await user.save({ validateBeforeSave: false });
+
+    try {
+      if (identifierType === "email") {
+        await sendEmail(
+          identifier,
+          "Giantogram Password Reset Code",
+          `Hello ${username},
+
+We received a request to reset your password.
+
+Your reset code is: ${resetCode}
+
+This code expires in 15 minutes.
+
+– Team Giantogram`
+        );
+      } else if (identifierType === "mobile") {
+        await sendSMS(
+          identifier,
+          `Giantogram reset code for ${username}: ${resetCode}. Expires in 15 minutes.`
+        );
+      }
+
+      return res.status(200).json({
+        code: "RESET_SENT",
+        message: "Reset code sent to provided contact",
+      });
+    } catch (err) {
+      console.error("Reset delivery error:", err);
+      return res.status(500).json({
+        code: "DELIVERY_FAILED",
+        message: "Failed to send reset code",
+      });
+    }
+  } catch (err) {
+    console.error("Error in sendResetAfterUsernameSelection:", err);
+    return res.status(500).json({
+      code: "SERVER_ERROR",
+      message: "An unexpected error occurred",
+    });
+  }
+};
+
+
+
 module.exports = {
   signin,
   signup,
@@ -1320,5 +1584,6 @@ module.exports = {
   resend2FA,
   uploadProfilePicture,
   setPassword,
-  forgotPasswordUsername,
+  sendResetCodeForUsernameRecovery,
+  sendResetAfterUsernameSelection
 };

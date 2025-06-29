@@ -12,7 +12,8 @@ const {
   resend2FA,
   uploadProfilePicture,
   setPassword,
-  forgotPasswordUsername,
+  sendResetCodeForUsernameRecovery,
+  sendResetAfterUsernameSelection,
 } = require("../controller/auth.controller.js");
 const auth = require("../middleware/auth.js");
 const upload = require("../utils/upload.js");
@@ -34,9 +35,12 @@ router.patch("/reactivate", auth, reactivateUser);
 
 router.post("/forgot-password", forgotPassword);
 
-router.post("/forgot-password-username", forgotPasswordUsername);
+router.post("/forgot-password-username", sendResetCodeForUsernameRecovery);
 
 router.post("/reset-password", resetPassword);
+
+router.post("/send-reset-after-username-selection", sendResetAfterUsernameSelection);
+
 
 router.post("/resend-2fa", resend2FA);
 
