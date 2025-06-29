@@ -18,7 +18,7 @@ function maskPhone(phone) {
 }
 const signup = async (req, res) => {
   try {
-    const { name, username, email, mobile, password, gender, dob } = req.body;
+    const { name, username, email, mobile, gender, dob } = req.body;
     if (!username || (!email && !mobile) || !name || !dob) {
       return res.status(400).send({
         code: "MISSING_FIELDS",
@@ -39,21 +39,8 @@ const signup = async (req, res) => {
         .send({ code: "INVALID_MOBILE", message: "Enter Valid Number" });
     }
 
-    // if (password.length < 8) {
-    //   return res.status(400).send({
-    //     code: "WEAK_PASSWORD",
-    //     message: "Password must be at least 8 characters long",
-    //   });
-    // }
-
     const birthDate = new Date(dob);
     const age = new Date().getFullYear() - birthDate.getFullYear();
-    // if (age < 13 || age > 150) {
-    //   return res.status(400).send({
-    //     code: "INVALID_AGE",
-    //     message: "You must be between 13 and 150 years old",
-    //   });
-    // }
 
     if (age < 13) {
       return res.status(400).send({
@@ -79,14 +66,6 @@ const signup = async (req, res) => {
       return res
         .status(400)
         .send({ code: "USERNAME_TAKEN", message: "Username Already In Use" });
-    // if (emailExists)
-    //   return res
-    //     .status(400)
-    //     .send({ code: "EMAIL_TAKEN", message: "Email already exists" });
-    // if (mobileExists)
-    //   return res
-    //     .status(400)
-    //     .send({ code: "MOBILE_TAKEN", message: "Mobile already exists" });
 
     const cleanGender = gender?.trim() || undefined;
     const user = new User({
@@ -195,7 +174,7 @@ const signin = async (req, res) => {
     if (!user) {
       return res
         .status(401)
-        .json({ code: "USER_NOT_FOUND", message: "User not found" });
+        .json({ code: "USER_NOT_FOUND", message: "No Account Found" });
     }
 
     const isPasswordValid = await user.comparePassword(password);
@@ -328,13 +307,11 @@ const verify2FA = async (req, res) => {
     if (!user) {
       return res
         .status(401)
-        .json({ code: "USER_NOT_FOUND", message: "User not found" });
+        .json({ code: "USER_NOT_FOUND", message: "No Account Found" });
     }
 
     if (user.twoFACode !== code) {
-      return res
-        .status(400)
-        .json({ code: 400, message: "Invalid or expired code" });
+      return res.status(400).json({ code: 400, message: "Invalid OTP" });
     }
 
     if (user.twoFACodeExpiry < new Date()) {
@@ -400,7 +377,7 @@ const deactivateUser = async (req, res) => {
     if (!user) {
       return res
         .status(404)
-        .json({ code: "USER_NOT_FOUND", message: "User not found" });
+        .json({ code: "USER_NOT_FOUND", message: "No Account Found" });
     }
 
     if (user.isDeactivated) {
@@ -461,7 +438,7 @@ const reactivateUser = async (req, res) => {
     if (!user) {
       return res
         .status(404)
-        .json({ code: "USER_NOT_FOUND", message: "User not found" });
+        .json({ code: "USER_NOT_FOUND", message: "No Account Found" });
     }
 
     if (!user.isDeactivated) {
@@ -488,440 +465,6 @@ const reactivateUser = async (req, res) => {
   }
 };
 
-// const forgotPassword = async (req, res) => {
-//   try {
-//     const { identifier, preferredMethod } = req.body; // identifier can be email or mobile
-
-//     if (!identifier) {
-//       return res.status(400).json({
-//         code: "MISSING_IDENTIFIER",
-//         message: "Email, mobile or username number is required",
-//       });
-//     }
-
-//     const identifierType = getIdentifierType(identifier);
-//     if (!identifierType) {
-//       return res.status(400).json({
-//         code: "INVALID_IDENTIFIER",
-//         message: "Invalid email, mobile or username format",
-//       });
-//     }
-
-//     const query =
-//       identifierType === "email"
-//         ? { email: identifier }
-//         : identifierType === "mobile"
-//         ? { mobile: identifier }
-//         : identifierType === "username"
-//         ? { username: identifier }
-//         : null;
-
-//     const user = await User.findOne(query);
-
-//     if (!user) {
-//       // For security, don't reveal if email/mobile exists or not
-//       return res.status(401).json({
-//         code: "USER_NOT_FOUND",
-//         message: "User not found",
-//       });
-//     }
-
-//     // Generate 6-digit reset code
-//     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-//     const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
-
-//     user.passwordResetCode = resetCode;
-//     user.passwordResetExpiry = expiry;
-//     await user.save({ validateBeforeSave: false });
-
-//     // Determine delivery method for reset code
-//     let deliveryMethod = preferredMethod;
-
-//     // If no preferred method specified, use the same method as identifier
-//     // if (!deliveryMethod) {
-//     //   if (identifierType === "email") {
-//     //     deliveryMethod = "email";
-//     //   } else if (identifierType === "mobile") {
-//     //     deliveryMethod = "sms";
-//     //   }
-//     // }
-
-//     // // If user wants different method, check if it's available
-//     // if (deliveryMethod === "email" && !user.email) {
-//     //   deliveryMethod = "sms";
-//     // } else if (deliveryMethod === "sms" && !user.mobile) {
-//     //   deliveryMethod = "email";
-//     // }
-// console.log("user....", user);
-//     try {
-//       if (user.email) {
-//         await sendEmail(
-//           user.email,
-//           "Giantogram Password Reset Code",
-//           `Hello,
-
-// We received a request to reset your password. Please use the reset code below to create a new password:
-
-// Reset Code: ${resetCode}
-
-// This code will expire in 15 minutes. If you didn't request a password reset, you can safely ignore this email.
-
-// Thanks,
-// Giantogram`
-//         );
-//       } else if ( user.mobile) {
-//         await sendSMS(
-//           user.mobile,
-//           `Giantogram password reset code: ${resetCode}. This code will expire in 15 minutes.`
-//         );
-//       }
-
-//       res.status(200).json({
-//         code: 200,
-//         message:
-//           "If an account with that identifier exists, a password reset code has been sent.",
-//       });
-//     } catch (deliveryError) {
-//       console.error("Password reset delivery error:", deliveryError);
-//       res.status(200).json({
-//         code: 200,
-//         message:
-//           "If an account with that identifier exists, a password reset code has been sent.",
-//       });
-//     }
-//   } catch (error) {
-//     console.error("Forgot password error:", error);
-//     res
-//       .status(500)
-//       .json({ code: "UNKNOWN_ERROR", message: "An unexpected error occurred" });
-//   }
-// };
-
-// const forgotPassword = async (req, res) => {
-//   try {
-//     const { identifier, preferredMethod } = req.body;
-
-//     if (!identifier) {
-//       return res.status(400).json({
-//         code: "MISSING_IDENTIFIER",
-//         message: "Email, mobile or username is required",
-//       });
-//     }
-
-//     const identifierType = getIdentifierType(identifier);
-//     if (!identifierType) {
-//       return res.status(400).json({
-//         code: "INVALID_IDENTIFIER",
-//         message: "Invalid email, mobile or username format",
-//       });
-//     }
-
-//     const query =
-//       identifierType === "email"
-//         ? { email: identifier }
-//         : identifierType === "mobile"
-//         ? { mobile: identifier }
-//         : identifierType === "username"
-//         ? { username: identifier }
-//         : null;
-
-//     const user = await User.findOne(query);
-
-//     if (!user) {
-//       return res.status(401).json({
-//         code: "USER_NOT_FOUND",
-//         message: "User not found",
-//       });
-//     }
-
-//     // If identifier is username and recovery options exist, return them
-//     if (
-//       identifierType === "username" &&
-//       ((user.recoveryEmails && user.recoveryEmails.length > 0) ||
-//         (user.recoveryPhones && user.recoveryPhones.length > 0))
-//     ) {
-//       const maskedEmails = user.recoveryEmails.map(maskEmail);
-//       const maskedPhones = user.recoveryPhones.map(maskPhone);
-
-//       return res.status(200).json({
-//         code: "CHOOSE_RECOVERY_METHOD",
-//         redirect: true,
-//         emails: maskedEmails,
-//         phones: maskedPhones,
-//         identifier: user.username,
-//         message: "Multiple recovery options found. Please choose one.",
-//       });
-//     }
-
-//     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-//     const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 min
-
-//     user.passwordResetCode = resetCode;
-//     user.passwordResetExpiry = expiry;
-//     await user.save({ validateBeforeSave: false });
-
-//     try {
-//       if (user.email) {
-//         await sendEmail(
-//           user.email,
-//           "Giantogram Password Reset Code",
-//           `Hello,
-
-// We received a request to reset your password. Use this code:
-
-// Reset Code: ${resetCode}
-
-// It expires in 15 minutes.
-
-// – Giantogram`
-//         );
-//       } else if (user.mobile) {
-//         await sendSMS(
-//           user.mobile,
-//           `Giantogram reset code: ${resetCode}. Expires in 15 mins.`
-//         );
-//       }
-
-//       res.status(200).json({
-//         code: 200,
-//         message: "Reset code sent if contact method exists.",
-//       });
-//     } catch (deliveryError) {
-//       console.error("Delivery failed:", deliveryError);
-//       res.status(500).json({
-//         code: "DELIVERY_FAILED",
-//         message: "Failed to send reset code",
-//       });
-//     }
-//   } catch (error) {
-//     console.error("Forgot password error:", error);
-//     res.status(500).json({
-//       code: "UNKNOWN_ERROR",
-//       message: "An unexpected error occurred",
-//     });
-//   }
-// };
-
-// const forgotPassword = async (req, res) => {
-//   try {
-//     const { identifier, preferredMethod } = req.body;
-//     console.log("🔐 Forgot Password request received", { identifier, preferredMethod });
-
-//     if (!identifier) {
-//       console.warn("⚠️ Missing identifier in request body");
-//       return res.status(400).json({
-//         code: "MISSING_IDENTIFIER",
-//         message: "Email, mobile or username is required",
-//       });
-//     }
-
-//     const identifierType = getIdentifierType(identifier);
-//     console.log("📌 Detected identifier type:", identifierType);
-
-//     if (!identifierType) {
-//       console.warn("❌ Invalid identifier format:", identifier);
-//       return res.status(400).json({
-//         code: "INVALID_IDENTIFIER",
-//         message: "Invalid email, mobile or username format",
-//       });
-//     }
-
-//     const query =
-//       identifierType === "email"
-//         ? { email: identifier }
-//         : identifierType === "mobile"
-//         ? { mobile: identifier }
-//         : identifierType === "username"
-//         ? { username: identifier }
-//         : null;
-
-//     console.log("🔍 Querying user with:", query);
-//     const user = await User.findOne(query);
-
-//     if (!user) {
-//       console.warn("👤 User not found for identifier:", identifier);
-//       return res.status(401).json({
-//         code: "USER_NOT_FOUND",
-//         message: "User not found",
-//       });
-//     }
-
-//     console.log("✅ User found:", {
-//       id: user._id,
-//       username: user.username,
-//       email: user.email,
-//       mobile: user.mobile,
-//     });
-
-//     if (
-//       identifierType === "username" &&
-//       ((user.recoveryEmails && user.recoveryEmails.length > 0) ||
-//         (user.recoveryPhones && user.recoveryPhones.length > 0))
-//     ) {
-//       const maskedEmails = user.recoveryEmails.map(maskEmail);
-//       const maskedPhones = user.recoveryPhones.map(maskPhone);
-
-//       console.log("🔄 Recovery options found for username:", {
-//         emails: maskedEmails,
-//         phones: maskedPhones,
-//       });
-
-//       return res.status(200).json({
-//         code: "CHOOSE_RECOVERY_METHOD",
-//         redirect: true,
-//         emails: maskedEmails,
-//         phones: maskedPhones,
-//         identifier: user.username,
-//         message: "Multiple recovery options found. Please choose one.",
-//       });
-//     }
-
-//     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-//     const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 min
-
-//     user.passwordResetCode = resetCode;
-//     user.passwordResetExpiry = expiry;
-//     await user.save({ validateBeforeSave: false });
-
-//     console.log("📨 Generated reset code:", resetCode, "Expires at:", expiry.toISOString());
-
-//     try {
-//       if (user.email) {
-//         console.log("📧 Sending reset code to email:", user.email);
-//         await sendEmail(
-//           user.email,
-//           "Giantogram Password Reset Code",
-//           `Hello,
-
-// We received a request to reset your password. Use this code:
-
-// Reset Code: ${resetCode}
-
-// It expires in 15 minutes.
-
-// – Giantogram`
-//         );
-//       } else if (user.mobile) {
-//         console.log("📱 Sending reset code to mobile:", user.mobile);
-//         await sendSMS(
-//           user.mobile,
-//           `Giantogram reset code: ${resetCode}. Expires in 15 mins.`
-//         );
-//       } else {
-//         console.warn("⚠️ No email or mobile found to send the reset code.");
-//       }
-
-//       console.log("✅ Reset code sent successfully.");
-//       res.status(200).json({
-//         code: 200,
-//         message: "Reset code sent if contact method exists.",
-//       });
-//     } catch (deliveryError) {
-//       console.error("🚨 Delivery failed:", deliveryError);
-//       res.status(500).json({
-//         code: "DELIVERY_FAILED",
-//         message: "Failed to send reset code",
-//       });
-//     }
-//   } catch (error) {
-//     console.error("🔥 Forgot password error:", error);
-//     res.status(500).json({
-//       code: "UNKNOWN_ERROR",
-//       message: "An unexpected error occurred",
-//     });
-//   }
-// };
-
-
-// const forgotPassword = async (req, res) => {
-//   try {
-//     const { identifier } = req.body;
-
-//     if (!identifier) {
-//       return res.status(400).json({
-//         code: "MISSING_IDENTIFIER",
-//         message: "Email, mobile or username is required",
-//       });
-//     }
-
-//     const identifierType = getIdentifierType(identifier);
-//     if (!identifierType) {
-//       return res.status(400).json({
-//         code: "INVALID_IDENTIFIER",
-//         message: "Invalid email, mobile or username format",
-//       });
-//     }
-
-//     let users = [];
-
-//     if (identifierType === "username") {
-//       const user = await User.findOne({ username: identifier });
-//       if (!user) {
-//         return res.status(401).json({
-//           code: "USER_NOT_FOUND",
-//           message: "Username not found",
-//         });
-//       }
-//       users = [user];
-//     } else if (identifierType === "email") {
-//       users = await User.find({ email: identifier });
-//     } else if (identifierType === "mobile") {
-//       users = await User.find({ mobile: identifier });
-//     }
-
-//     if (!users || users.length === 0) {
-//       return res.status(401).json({
-//         code: "USER_NOT_FOUND",
-//         message: "No users found linked to the provided identifier",
-//       });
-//     }
-
-//     // If multiple usernames are found, return options
-//     if (users.length > 1) {
-//       const usernames = users.map((u) => ({
-//         id: u._id,
-//         username: u.username,
-//       }));
-
-//       return res.status(200).json({
-//         code: "MULTIPLE_USERS_FOUND",
-//         message: "Multiple accounts found. Please choose a username.",
-//         usernames,
-//       });
-//     }
-
-//     // Proceed to send reset code to the single matched user
-//     const user = users[0];
-//     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-//     const expiry = new Date(Date.now() + 15 * 60 * 1000);
-
-//     user.passwordResetCode = resetCode;
-//     user.passwordResetExpiry = expiry;
-//     await user.save({ validateBeforeSave: false });
-
-//     if (user.email) {
-//       await sendEmail(
-//         user.email,
-//         "Giantogram Password Reset Code",
-//         `Your reset code is ${resetCode}. It will expire in 15 minutes.`
-//       );
-//     } else if (user.mobile) {
-//       await sendSMS(user.mobile, `Reset code: ${resetCode}. Valid for 15 mins.`);
-//     }
-
-//     return res.status(200).json({
-//       code: "RESET_CODE_SENT",
-//       message: "Reset code sent to your email or mobile.",
-//     });
-//   } catch (error) {
-//     console.error("Forgot password error:", error);
-//     res.status(500).json({
-//       code: "SERVER_ERROR",
-//       message: "An unexpected error occurred.",
-//     });
-//   }
-// };
-
 const forgotPassword = async (req, res) => {
   try {
     const { identifier } = req.body;
@@ -929,7 +472,7 @@ const forgotPassword = async (req, res) => {
     if (!identifier) {
       return res.status(400).json({
         code: "MISSING_IDENTIFIER",
-        message: "Email, mobile or username is required",
+        message: "Enter Username, Email or Number",
       });
     }
 
@@ -937,7 +480,7 @@ const forgotPassword = async (req, res) => {
     if (!identifierType) {
       return res.status(400).json({
         code: "INVALID_IDENTIFIER",
-        message: "Invalid email, mobile or username format",
+        message: "Enter a Valid Username, Email or Number",
       });
     }
 
@@ -948,7 +491,7 @@ const forgotPassword = async (req, res) => {
       if (!user) {
         return res.status(401).json({
           code: "USER_NOT_FOUND",
-          message: "Username not found",
+          message: "No Account Found",
         });
       }
 
@@ -972,13 +515,16 @@ const forgotPassword = async (req, res) => {
     }
 
     // 💡 2. If identifier is email or mobile → return linked usernames
-    const query = identifierType === "email" ? { email: identifier } : { mobile: identifier };
+    const query =
+      identifierType === "email"
+        ? { email: identifier }
+        : { mobile: identifier };
     const users = await User.find(query);
 
     if (!users || users.length === 0) {
       return res.status(401).json({
         code: "USER_NOT_FOUND",
-        message: "No accounts found linked to this " + identifierType,
+        message: "No Account Found",
       });
     }
 
@@ -1005,22 +551,31 @@ const forgotPassword = async (req, res) => {
 async function sendResetCode(user, res) {
   try {
     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 min expiry
+    const expiry = new Date(Date.now() + 5 * 60 * 1000);
 
     user.passwordResetCode = resetCode;
     user.passwordResetExpiry = expiry;
     await user.save({ validateBeforeSave: false });
 
     if (user.email) {
-      await sendEmail(user.email, "Giantogram Reset Code", `Reset code: ${resetCode}`);
+      await sendEmail(
+        user.email,
+        "Giantogram Password Reset Code",
+        `Password Reset code: ${resetCode}`
+      );
+      return res.status(200).json({
+        code: "RESET_CODE_SENT",
+        message: "Password reset code sent has been sent to your email.",
+        maskedDestination: user.email.replace(/(.{2})(.*)(@.*)/, "$1***$3"),
+      });
     } else if (user.mobile) {
-      await sendSMS(user.mobile, `Reset code: ${resetCode}`);
+      await sendSMS(user.mobile, `Password Reset code: ${resetCode}`);
+      return res.status(200).json({
+        code: "RESET_CODE_SENT",
+        message: "Password reset code sent has been sent to your mobile.",
+        maskedDestination: user.mobile.replace(/(.{2})(.*)(.{2})/, "$1***$3"),
+      });
     }
-
-    return res.status(200).json({
-      code: "RESET_CODE_SENT",
-      message: "Reset code sent successfully.",
-    });
   } catch (error) {
     console.error("Send code failed:", error);
     return res.status(500).json({
@@ -1029,8 +584,6 @@ async function sendResetCode(user, res) {
     });
   }
 }
-
-
 
 const sendResetCodeForUsernameRecovery = async (req, res) => {
   try {
@@ -1051,7 +604,7 @@ const sendResetCodeForUsernameRecovery = async (req, res) => {
       // For security, don't reveal if email/mobile exists or not
       return res.status(401).json({
         code: "USER_NOT_FOUND",
-        message: "User not found",
+        message: "No Account Found",
       });
     }
 
@@ -1067,7 +620,7 @@ const sendResetCodeForUsernameRecovery = async (req, res) => {
 
     // Generate 6-digit reset code
     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    const expiry = new Date(Date.now() + 5 * 60 * 1000);
 
     user.passwordResetCode = resetCode;
     user.passwordResetExpiry = expiry;
@@ -1088,7 +641,7 @@ We received a request to reset your password. Please use the reset code below to
 
 Reset Code: ${resetCode}
 
-This code will expire in 15 minutes. If you didn't request a password reset, you can safely ignore this email.
+This code will expire in 5 minutes. If you didn't request a password reset, you can safely ignore this email.
 
 Thanks,
 Giantogram`
@@ -1096,7 +649,7 @@ Giantogram`
       } else if (identifierType === "mobile") {
         await sendSMS(
           identifier,
-          `Giantogram password reset code: ${resetCode}. This code will expire in 15 minutes.`
+          `Giantogram password reset code: ${resetCode}. This code will expire in 5 minutes.`
         );
       }
 
@@ -1284,7 +837,7 @@ const resend2FA = async (req, res) => {
     if (!user) {
       return res.status(401).json({
         code: "USER_NOT_FOUND",
-        message: "User not found",
+        message: "No Account Found",
       });
     }
 
@@ -1489,8 +1042,6 @@ const uploadProfilePicture = async (req, res) => {
   }
 };
 
-
-
 const sendResetAfterUsernameSelection = async (req, res) => {
   try {
     const { identifier, username } = req.body;
@@ -1516,7 +1067,7 @@ const sendResetAfterUsernameSelection = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         code: "USER_NOT_FOUND",
-        message: "Username does not exist",
+        message: "No Account Found",
       });
     }
 
@@ -1537,7 +1088,7 @@ const sendResetAfterUsernameSelection = async (req, res) => {
 
 We received a request to reset your password.
 
-Your reset code is: ${resetCode}
+Password reset code: ${resetCode}
 
 This code expires in 15 minutes.
 
@@ -1546,7 +1097,7 @@ This code expires in 15 minutes.
       } else if (identifierType === "mobile") {
         await sendSMS(
           identifier,
-          `Giantogram reset code for ${username}: ${resetCode}. Expires in 15 minutes.`
+          `Giantogram Password reset code for ${username}: ${resetCode}. Expires in 15 minutes.`
         );
       }
 
@@ -1570,8 +1121,6 @@ This code expires in 15 minutes.
   }
 };
 
-
-
 module.exports = {
   signin,
   signup,
@@ -1585,5 +1134,5 @@ module.exports = {
   uploadProfilePicture,
   setPassword,
   sendResetCodeForUsernameRecovery,
-  sendResetAfterUsernameSelection
+  sendResetAfterUsernameSelection,
 };

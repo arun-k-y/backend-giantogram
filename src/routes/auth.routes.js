@@ -39,8 +39,10 @@ router.post("/forgot-password-username", sendResetCodeForUsernameRecovery);
 
 router.post("/reset-password", resetPassword);
 
-router.post("/send-reset-after-username-selection", sendResetAfterUsernameSelection);
-
+router.post(
+  "/send-reset-after-username-selection",
+  sendResetAfterUsernameSelection
+);
 
 router.post("/resend-2fa", resend2FA);
 
@@ -135,30 +137,6 @@ router.post("/recovery", async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ message: "Server error" });
-  }
-});
-
-router.delete("/delete-profile-picture", auth, async (req, res) => {
-  try {
-    const user = req.user;
-
-    // Delete file from filesystem if needed
-    if (user.profilePicture) {
-      const fs = require("fs");
-      const filePath = `./uploads/profile_pictures/${path.basename(
-        user.profilePicture
-      )}`;
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    }
-
-    user.profilePicture = null;
-    await user.save();
-
-    res.json({ message: "Profile picture deleted successfully" });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
   }
 });
 
