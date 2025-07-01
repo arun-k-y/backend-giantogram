@@ -14,6 +14,7 @@ const {
   setPassword,
   sendResetCodeForUsernameRecovery,
   sendResetAfterUsernameSelection,
+  requestOtp,
 } = require("../controller/auth.controller.js");
 const auth = require("../middleware/auth.js");
 const upload = require("../utils/upload.js");
@@ -38,6 +39,8 @@ router.post("/forgot-password", forgotPassword);
 router.post("/forgot-password-username", sendResetCodeForUsernameRecovery);
 
 router.post("/reset-password", resetPassword);
+
+router.post("/request-otp", requestOtp);
 
 router.post(
   "/send-reset-after-username-selection",

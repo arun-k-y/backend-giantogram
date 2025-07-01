@@ -1,4 +1,3 @@
-// Helper function to validate mobile number format
 const isValidMobile = (mobile) => {
   // Adjust regex based on your requirements (this supports international format)
   const mobileRegex = /^[+]?[1-9]\d{1,14}$/;

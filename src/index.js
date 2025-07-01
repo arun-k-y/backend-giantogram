@@ -8,7 +8,6 @@ const authRoutes2 = require("./routes/user.routes.js");
 const uploadRoutes = require("./routes/user.routes.js");
 
 const cors = require("cors"); // Import the cors middleware
-const { dropEmailIndex } = require("./utils/dropEmailIndex.js");
 const app = express();
 app.use(express.json());
 
@@ -19,15 +18,6 @@ app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
-
-// Use the cors middleware
-// app.use(
-//   cors({
-//     origin: "http://localhost:8082", // Update this to match the frontend's origin
-//     methods: "GET,POST,PUT,DELETE", // Specify the methods you want to allow
-//     credentials: true, // Enable sending of cookies or other credentials
-//   })
-// );
 
 app.use(
   cors({
@@ -45,13 +35,6 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log("server started on port", PORT);
 });
-
-// mongodb+srv://test:J62woiyoKXiosIUn@cluster0.okfsytr.mongodb.net/
-// mongoose
-//   .connect("mongodb://127.0.0.1:27017/auth")
-//   .then(() => console.log("Connected to MongoDB!"))
-//   .catch((err) => console.error("Failed to connect to MongoDB:", err));
-//  dropEmailIndex()
 
 const connectWithRetry = () => {
   mongoose

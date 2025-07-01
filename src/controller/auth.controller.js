@@ -1,6 +1,6 @@
 const User = require("../model/user.modal.js");
 const sendEmail = require("../utils/sendEmail.js");
-const sendSMS = require("../utils/sendSMS.js"); // You'll need to implement this
+const sendSMS = require("../utils/sendSMS.js"); 
 const {
   isValidEmail,
   isValidMobile,
@@ -16,6 +16,63 @@ function maskEmail(email) {
 function maskPhone(phone) {
   return phone.replace(/.(?=.{4})/g, "*");
 }
+
+const APP_HASH = "vqWGL1M7Unb";
+
+const requestOtp = async (req, res) => {
+  try {
+    const { mobile } = req.body;
+
+    if (!mobile) {
+      return res.status(400).json({
+        code: "MISSING_MOBILE",
+        message: "Mobile number is required",
+      });
+    }
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = new Date(Date.now() + 5 * 60 * 1000); // valid for 5 mins
+
+    let user = await User.findOne({ mobile });
+
+    if (!user) {
+      let username;
+      do {
+        username = `user${Math.floor(100000 + Math.random() * 900000)}`;
+      } while (await User.findOne({ username }));
+
+      user = new User({
+        mobile,
+        username,
+        name: "Giantogram User",
+        dob: new Date("2000-01-01"),
+      });
+    }
+
+    user.twoFACode = otp;
+    user.twoFACodeExpiry = expiry;
+
+    await user.save({ validateBeforeSave: false });
+
+    const message = `<#> Your Giantogram OTP is: ${otp}\n${APP_HASH}`;
+
+    await sendSMS(mobile, message);
+
+    res.status(200).json({
+      code: 200,
+      message: "OTP sent successfully",
+      deliveryMethod: "sms",
+    });
+  } catch (err) {
+    console.error("OTP SEND ERROR:", err);
+    res.status(500).json({
+      code: "OTP_SEND_FAILED",
+      message: "Failed to send OTP",
+    });
+  }
+};
+
 const signup = async (req, res) => {
   try {
     const { name, username, email, mobile, gender, dob } = req.body;
@@ -153,12 +210,6 @@ const signin = async (req, res) => {
         message: "Invalid email or mobile number or username format",
       });
     }
-
-    // Find user by email or mobile
-    // const query =
-    //   identifierType === "email"
-    //     ? { email: identifier }
-    //     : { mobile: identifier };
 
     const query =
       identifierType === "email"
@@ -716,12 +767,6 @@ const resetPassword = async (req, res) => {
       });
     }
 
-    // Find user by email or mobile
-    // const query =
-    //   identifierType === "email"
-    //     ? { email: identifier }
-    //     : { mobile: identifier };
-
     const query =
       identifierType === "email"
         ? { email: identifier }
@@ -1135,4 +1180,5 @@ module.exports = {
   setPassword,
   sendResetCodeForUsernameRecovery,
   sendResetAfterUsernameSelection,
+  requestOtp,
 };
