@@ -81,6 +81,11 @@ userSchema.pre("save", async function (next) {
 // Method to generate an auth token for the user
 userSchema.methods.generateAuthToken = function () {
   const user = this;
+  
+  if (!process.env.JWT_SECRET) {
+    console.warn("⚠️  JWT_SECRET not found in environment variables");
+  }
+  
   const token = jwt.sign(
     { _id: user._id, username: user.username },
     process.env.JWT_SECRET || "your_jwt_secret" // Use environment variable

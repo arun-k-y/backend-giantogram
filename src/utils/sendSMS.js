@@ -17,9 +17,14 @@
 
 const twilio = require("twilio");
 
-const accountSid = "ACce09ba9fc6052a5f35190dfb11cd7f91"; // Replace with your actual Twilio SID
-const authToken = "bad4b5369b00eff8507c7eaa5fcd4f19"; // Replace with your actual Twilio Auth Token
-const twilioPhoneNumber = "+14452917093"; // Replace with your Twilio phone number
+// Validate required environment variables
+if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_PHONE_NUMBER) {
+  console.warn("⚠️  Twilio credentials not found in environment variables");
+}
+
+const accountSid = process.env.TWILIO_ACCOUNT_SID
+const authToken = process.env.TWILIO_AUTH_TOKEN 
+const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER 
 
 const client = twilio(accountSid, authToken);
 

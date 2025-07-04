@@ -8,6 +8,8 @@ const {
 } = require("../utils/validators");
 
 const cloudinary = require("../config/cloudinary.js");
+const { validatePassword } = require("../config/security.js");
+
 function maskEmail(email) {
   const [local, domain] = email.split("@");
   return local.slice(0, 2) + "****@" + domain;
@@ -17,7 +19,7 @@ function maskPhone(phone) {
   return phone.replace(/.(?=.{4})/g, "*");
 }
 
-const APP_HASH = "vqWGL1M7Unb";
+const APP_HASH = process.env.APP_HASH || "vqWGL1M7Unb";
 
 const requestOtp = async (req, res) => {
   try {
@@ -738,10 +740,11 @@ const resetPassword = async (req, res) => {
       });
     }
 
-    if (newPassword?.trim()?.length < 8) {
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.valid) {
       return res.status(400).json({
-        code: "MISSING_FIELDS",
-        message: "Password must contain 8 characters",
+        code: "INVALID_PASSWORD",
+        message: passwordValidation.message,
       });
     }
 
@@ -989,10 +992,11 @@ const setPassword = async (req, res) => {
       });
     }
 
-    if (password?.trim()?.length < 8) {
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.valid) {
       return res.status(400).json({
-        code: "MISSING_FIELDS",
-        message: "Password must contain 8 characters",
+        code: "INVALID_PASSWORD",
+        message: passwordValidation.message,
       });
     }
     // console.log("usr....", req)

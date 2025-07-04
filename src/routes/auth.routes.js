@@ -100,7 +100,11 @@ router.post("/recovery", async (req, res) => {
       const token = authHeader.replace("Bearer ", "").trim();
 
       try {
-        const decoded = jwt.verify(token, "your_jwt_secret");
+        if (!process.env.JWT_SECRET) {
+          console.warn("⚠️  JWT_SECRET not found in environment variables");
+        }
+        
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret");
         user = await User.findById(decoded._id).select(
           "recoveryEmails recoveryPhones mobile email"
         );

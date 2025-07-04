@@ -1,15 +1,31 @@
+// Load environment variables
+require('dotenv').config();
+
 const express = require("express");
 const path = require("path");
 const fs = require("fs");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 
 const mongoose = require("mongoose");
 const authRoutes = require("./routes/auth.routes.js");
 const authRoutes2 = require("./routes/user.routes.js");
 const uploadRoutes = require("./routes/user.routes.js");
+const { validateEnvironmentVariables, corsConfig, rateLimitConfig } = require("./config/security.js");
 
 const cors = require("cors"); // Import the cors middleware
 const app = express();
-app.use(express.json());
+
+// Security middleware
+app.use(helmet());
+
+// Rate limiting
+const limiter = rateLimit(rateLimitConfig);
+app.use(limiter);
+
+// Body parsing middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 const PORT = process.env.PORT || 2001;
 
@@ -19,34 +35,29 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], // ✅ PATCH added
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true,
-  })
-);
+app.use(cors(corsConfig));
 
 app.get("/", (req, res) => {
   res.send(`Hello, this is the server running on port ${PORT}`);
 });
 
+// Validate environment variables on startup
+validateEnvironmentVariables();
+
 app.listen(PORT, () => {
-  console.log("server started on port", PORT);
+  console.log("🚀 Server started on port", PORT);
+  console.log("🔒 Security middleware enabled");
 });
 
 const connectWithRetry = () => {
+  const mongoUri = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/auth";
+  
+  if (!process.env.MONGODB_URI) {
+    console.warn("⚠️  MONGODB_URI not set, using local MongoDB");
+  }
+  
   mongoose
-    .connect(
-      "mongodb+srv://test:J62woiyoKXiosIUn@cluster0.okfsytr.mongodb.net/auth",
-      { useNewUrlParser: true, useUnifiedTopology: true }
-    )
-
-    // .connect("mongodb://127.0.0.1:27017/auth", {
-    //   useNewUrlParser: true,
-    //   useUnifiedTopology: true,
-    // })
+    .connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
     .then(() => {
       console.log("Connected to MongoDB!");
       console.log(
