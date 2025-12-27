@@ -22,9 +22,14 @@ if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !proces
   console.warn("⚠️  Twilio credentials not found in environment variables");
 }
 
-const accountSid = process.env.TWILIO_ACCOUNT_SID
-const authToken = process.env.TWILIO_AUTH_TOKEN 
-const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER 
+// const accountSid = process.env.TWILIO_ACCOUNT_SID
+// const authToken = process.env.TWILIO_AUTH_TOKEN 
+// const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER 
+
+const accountSid = "ACce09ba9fc6052a5f35190dfb11cd7f91"; // Replace with your actual Twilio SID
+const authToken = "bad4b5369b00eff8507c7eaa5fcd4f19"; // Replace with your actual Twilio Auth Token
+const twilioPhoneNumber = "+1234567890"; // Replace with your Twilio phone number
+
 
 const client = twilio(accountSid, authToken);
 

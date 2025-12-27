@@ -51,15 +51,16 @@ app.listen(PORT, () => {
 
 const connectWithRetry = () => {
   const mongoUri = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/auth";
-  
+  const isCloud = mongoUri.startsWith("mongodb+srv://") || mongoUri.includes(".mongodb.net");
   if (!process.env.MONGODB_URI) {
     console.warn("⚠️  MONGODB_URI not set, using local MongoDB");
   }
   
   mongoose
-    .connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
+    .connect(mongoUri)
     .then(() => {
       console.log("Connected to MongoDB!");
+      console.log(isCloud ? "✅ Using MongoDB Atlas (cloud)" : "✅ Using local MongoDB");
       console.log(
         `[${new Date().toISOString()}] Database connection established`
       );

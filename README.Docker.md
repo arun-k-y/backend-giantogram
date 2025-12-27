@@ -20,3 +20,7 @@ docs for more detail on building and pushing.
 
 ### References
 * [Docker's Node.js guide](https://docs.docker.com/language/nodejs/)
+
+
+
+docker build push to repo: `docker buildx build --platform linux/amd64 -t arunkumar1233/my-react-app:latest --push .`

@@ -103,6 +103,17 @@ userSchema.methods.checkProfileComplete = function () {
 // Method to compare given password with the hashed password in the database
 userSchema.methods.comparePassword = async function (candidatePassword) {
   const user = this;
+
+  // Defensive checks to avoid passing undefined into bcrypt
+  if (!user.password) {
+    // No password set on account (e.g., created via OTP-only flow)
+    return false;
+  }
+
+  if (typeof candidatePassword !== "string" || candidatePassword.length === 0) {
+    return false;
+  }
+
   return bcrypt.compare(candidatePassword, user.password);
 };
 

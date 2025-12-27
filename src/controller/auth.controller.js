@@ -1,6 +1,6 @@
 const User = require("../model/user.modal.js");
 const sendEmail = require("../utils/sendEmail.js");
-const sendSMS = require("../utils/sendSMS.js"); 
+const sendSMS = require("../utils/sendSMS.js");
 const {
   isValidEmail,
   isValidMobile,
@@ -28,7 +28,7 @@ const requestOtp = async (req, res) => {
     if (!mobile) {
       return res.status(400).json({
         code: "MISSING_MOBILE",
-        message: "Mobile number is required",
+        message: "Mobile Number Is Required",
       });
     }
 
@@ -63,14 +63,14 @@ const requestOtp = async (req, res) => {
 
     res.status(200).json({
       code: 200,
-      message: "OTP sent successfully",
+      message: "OTP Sent Successfully",
       deliveryMethod: "sms",
     });
   } catch (err) {
     console.error("OTP SEND ERROR:", err);
     res.status(500).json({
       code: "OTP_SEND_FAILED",
-      message: "Failed to send OTP",
+      message: "Failed To Send OTP",
     });
   }
 };
@@ -82,14 +82,14 @@ const signup = async (req, res) => {
       return res.status(400).send({
         code: "MISSING_FIELDS",
         message:
-          "Username, password, DOB, and either email or mobile are required",
+          "Username, Password, DOB, And Either Email Or Mobile Are Required",
       });
     }
 
     if (email && !isValidEmail(email)) {
       return res
         .status(400)
-        .send({ code: "INVALID_EMAIL", message: "Enter Valid Gmail" });
+        .send({ code: "INVALID_EMAIL", message: "Enter Valid Gmail/Email" });
     }
 
     if (mobile && !isValidMobile(mobile)) {
@@ -104,14 +104,14 @@ const signup = async (req, res) => {
     if (age < 13) {
       return res.status(400).send({
         code: "INVALID_AGE",
-        message: "At least User have to be 13 years old",
+        message: "At Least User Have To Be 13 Teen Years Old",
       });
     }
 
     if (age > 150) {
       return res.status(400).send({
         code: "INVALID_AGE",
-        message: "At most User have to be 150 years old",
+        message: "User Can Have Maximum Of 150 Years Only",
       });
     }
 
@@ -183,7 +183,7 @@ const signup = async (req, res) => {
       console.error("Failed to deliver 2FA after signup:", deliveryError);
       return res.status(500).send({
         code: "DELIVERY_ERROR",
-        message: "Account created, but failed to send verification code.",
+        message: "Account Created, But Failed To Send Verification Code.",
       });
     }
   } catch (error) {
@@ -198,18 +198,30 @@ const signin = async (req, res) => {
   try {
     const { identifier, password, preferredMethod } = req.body; // identifier can be email or mobile
 
-    if (!identifier || !password) {
+    if (!identifier) {
       return res.status(400).json({
         code: "MISSING_FIELDS",
-        message: "Identifier (email or mobile) and password are required",
+        message: "Identifier (Email, Mobile, Or Username) Is Required",
       });
     }
 
     const identifierType = getIdentifierType(identifier);
     if (!identifierType) {
+      // Identify what type of identifier the user was trying to enter
+      let errorMessage = "Invalid email or mobile number or username format";
+
+      if (identifier.includes("@")) {
+        errorMessage = "Enter Valid Email/Gmail";
+      } else if (/^\d+$/.test(identifier)) {
+        // Numeric input without + prefix - suggest selecting country code
+        errorMessage = "Enter Valid Username or select country code for mobile number";
+      } else if (identifier.trim().length > 0) {
+        errorMessage = "Enter Valid Username";
+      }
+
       return res.status(400).json({
         code: "INVALID_IDENTIFIER",
-        message: "Invalid email or mobile number or username format",
+        message: errorMessage,
       });
     }
 
@@ -224,102 +236,175 @@ const signin = async (req, res) => {
 
     const user = await User.findOne(query);
 
+    // If password is not provided, check if account exists and respond accordingly
+    if (!password) {
+      if (!user) {
+        // Account doesn't exist - return appropriate error message based on identifier type
+        let errorMessage = "No account found";
+        
+        if (identifierType === "email") {
+          errorMessage = "Enter Valid Email/Gmail";
+        } else if (identifierType === "mobile") {
+          errorMessage = "Enter Valid Number";
+        } else if (identifierType === "username") {
+          // If it's a 10-digit number treated as username, suggest it might need country code
+          // if (/^\d{10}$/.test(identifier)) {
+          //   errorMessage = "Enter Valid Username or select country code for mobile number";
+          // } else {
+            errorMessage = "Enter Valid Username";
+          // }
+        }
+        
+        return res.status(400).json({
+          code: "ACCOUNT_NOT_FOUND",
+          message: errorMessage,
+        });
+      }
+      // Account exists - ask for password
+      return res.status(400).json({
+        code: "PASSWORD_REQUIRED",
+        message: "Password Is Required",
+      });
+    }
+
+    // If account doesn't exist, create user with dummy data and send OTP
     if (!user) {
-      return res
-        .status(401)
-        .json({ code: "USER_NOT_FOUND", message: "No Account Found" });
+      // For username, if account doesn't exist, return error (can't create account without email/mobile for OTP)
+      if (identifierType === "username") {
+        return res.status(401).json({
+          code: "USER_NOT_FOUND",
+          message: "Enter Valid Username",
+        });
+      }
+
+      // Create user with dummy data for email/mobile
+      const dummyData = {
+        name: "Giantogram User",
+        dob: new Date("2000-01-01"),
+      };
+
+      // Set identifier based on type
+      if (identifierType === "email") {
+        dummyData.email = identifier;
+        // Generate username for email-based account
+        let username;
+        do {
+          username = `user${Math.floor(100000 + Math.random() * 900000)}`;
+        } while (await User.findOne({ username }));
+        dummyData.username = username;
+      } else if (identifierType === "mobile") {
+        dummyData.mobile = identifier;
+        // Generate username for mobile-based account
+        let username;
+        do {
+          username = `user${Math.floor(100000 + Math.random() * 900000)}`;
+        } while (await User.findOne({ username }));
+        dummyData.username = username;
+      }
+
+      // Set password
+      dummyData.password = password;
+
+      user = new User(dummyData);
+
+      // Generate 6-digit 2FA code
+      const twoFACode = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+      user.twoFACode = twoFACode;
+      user.twoFACodeExpiry = expiry;
+      await user.save({ validateBeforeSave: false });
+
+      // Determine delivery method
+      let deliveryMethod = preferredMethod || (identifierType === "email" ? "email" : "sms");
+
+      try {
+        if (deliveryMethod === "email" && user.email) {
+          await sendEmail(
+            user.email,
+            "Giantogram Verification Code",
+            `Hello,
+
+Welcome to Giantogram! Please use the verification code below to verify your account:
+
+Verification Code: ${twoFACode}
+
+This code will expire in 5 minutes.
+
+Thanks,
+Giantogram`
+          );
+        } else if (deliveryMethod === "sms" && user.mobile) {
+          await sendSMS(
+            user.mobile,
+            `Welcome to Giantogram! Your verification code is: ${twoFACode}. This code will expire in 5 minutes.`
+          );
+        } else {
+          // Should not happen, but handle gracefully
+          return res.status(500).json({
+            code: "DELIVERY_ERROR",
+            message: "Unable to send verification code. Please try again.",
+          });
+        }
+
+        return res.status(200).json({
+          code: 200,
+          message: `A verification code has been sent to your ${
+            deliveryMethod === "email" ? "email" : "mobile"
+          }. Please enter it to continue.`,
+          deliveryMethod,
+          maskedDestination:
+            deliveryMethod === "email"
+              ? user.email.replace(/(.{2})(.*)(@.*)/, "$1***$3")
+              : user.mobile.replace(/(.{2})(.*)(.{2})/, "$1***$3"),
+        });
+      } catch (deliveryError) {
+        console.error("Delivery error:", deliveryError);
+        return res.status(500).json({
+          code: "DELIVERY_ERROR",
+          message: "Failed To Send Verification Code",
+        });
+      }
+    }
+
+    // If the account doesn't have a password (e.g., created via OTP-only flow), inform the client
+    if (!user.password) {
+      return res.status(400).json({
+        code: "PASSWORD_NOT_SET",
+        message:
+          "This account does not have a password. Please use OTP sign-in or set a password first.",
+      });
     }
 
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
       return res
         .status(401)
-        .json({ code: "INVALID_PASSWORD", message: "Invalid password" });
+        .json({ code: "INVALID_PASSWORD", message: "Invalid Password" });
     }
 
-    // Generate 6-digit 2FA code
-    const twoFACode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+    // Password is valid - skip OTP and return token directly
+    const userObj = user.toObject();
+    delete userObj?.password;
+    delete userObj?.twoFACode;
+    delete userObj?.twoFACodeExpiry;
 
-    user.twoFACode = twoFACode;
-    user.twoFACodeExpiry = expiry;
-    await user.save({ validateBeforeSave: false });
+    const token = user.generateAuthToken();
+    const profilePicture = user.checkProfileComplete();
 
-    // Determine delivery method for 2FA code
-    let deliveryMethod = preferredMethod;
-
-    // If no preferred method specified, use available method
-    if (!deliveryMethod) {
-      if (user.email && user.mobile) {
-        deliveryMethod = "email"; // Default to email if both available
-      } else if (user.email) {
-        deliveryMethod = "email";
-      } else if (user.mobile) {
-        deliveryMethod = "sms";
-      }
-    }
-
-    // Validate preferred method is available
-    if (deliveryMethod === "email" && !user.email) {
-      return res.status(400).json({
-        code: "EMAIL_NOT_AVAILABLE",
-        message: "Email verification requested but no email on file",
-      });
-    }
-
-    if (deliveryMethod === "sms" && !user.mobile) {
-      return res.status(400).json({
-        code: "MOBILE_NOT_AVAILABLE",
-        message: "SMS verification requested but no mobile number on file",
-      });
-    }
-
-    try {
-      if (deliveryMethod === "email") {
-        await sendEmail(
-          user.email,
-          "Giantogram Verification Code",
-          `Hello,
-
-We received a request to sign in to your account. Please use the verification code below to continue:
-
-Verification Code: ${twoFACode}
-
-This code will expire in 5 minutes. If you didn't request this, you can safely ignore this email.
-
-Thanks,
-Giantogram`
-        );
-      } else if (deliveryMethod === "sms") {
-        await sendSMS(
-          user.mobile,
-          `Giantogram verification code: ${twoFACode}. This code will expire in 5 minutes.`
-        );
-      }
-
-      res.status(200).json({
-        code: 200,
-        message: `A verification code has been sent to your ${
-          deliveryMethod === "email" ? "email" : "mobile"
-        }. Please enter it to continue.`,
-        deliveryMethod,
-        maskedDestination:
-          deliveryMethod === "email"
-            ? user.email.replace(/(.{2})(.*)(@.*)/, "$1***$3")
-            : user.mobile.replace(/(.{2})(.*)(.{2})/, "$1***$3"),
-      });
-    } catch (deliveryError) {
-      console.error("Delivery error:", deliveryError);
-      res.status(500).json({
-        code: "DELIVERY_ERROR",
-        message: "Failed to send verification code",
-      });
-    }
+    return res.status(200).json({
+      code: 200,
+      message: "Login Successful",
+      token,
+      user: userObj,
+      profilePicture,
+      skipOtp: true, // Flag to indicate OTP was skipped
+    });
   } catch (error) {
     console.error("Signin error:", error);
     res
       .status(500)
-      .json({ code: "UNKNOWN_ERROR", message: "An unexpected error occurred" });
+      .json({ code: "UNKNOWN_ERROR", message: "An Unexpected Error Occurred" });
   }
 };
 
@@ -334,7 +419,7 @@ const verify2FA = async (req, res) => {
     if (!identifier || !code) {
       return res.status(400).json({
         code: "MISSING_FIELDS",
-        message: "Identifier and OTP are required",
+        message: "Identifier And OTP Are Required",
       });
     }
 
@@ -342,7 +427,7 @@ const verify2FA = async (req, res) => {
     if (!identifierType) {
       return res.status(400).json({
         code: "INVALID_IDENTIFIER",
-        message: "Invalid email or mobile number or username format",
+        message: "Invalid Email Or Mobile Number Or Username Format",
       });
     }
 
@@ -364,11 +449,13 @@ const verify2FA = async (req, res) => {
     }
 
     if (user.twoFACode !== code) {
-      return res.status(400).json({ code: 400, message: "Invalid OTP" });
+      return res
+        .status(400)
+        .json({ code: 400, message: "Enter Valid OTP" });
     }
 
     if (user.twoFACodeExpiry < new Date()) {
-      return res.status(400).json({ code: 400, message: "Code expired" });
+      return res.status(400).json({ code: 400, message: "Code Expired" });
     }
 
     // Clear 2FA fields after successful verification
@@ -383,7 +470,7 @@ const verify2FA = async (req, res) => {
     const profilePicture = user.checkProfileComplete();
     res.status(200).json({
       code: 200,
-      message: "Login successful",
+      message: "Login Successful",
       token,
       user: userObj,
       profilePicture,
@@ -392,7 +479,7 @@ const verify2FA = async (req, res) => {
     console.error("2FA verification error:", error);
     res
       .status(500)
-      .json({ code: "UNKNOWN_ERROR", message: "An unexpected error occurred" });
+      .json({ code: "UNKNOWN_ERROR", message: "An Unexpected Error Occurred" });
   }
 };
 
@@ -403,7 +490,7 @@ const deactivateUser = async (req, res) => {
     if (!identifier) {
       return res.status(400).json({
         code: "MISSING_IDENTIFIER",
-        message: "Email or mobile number or username is required",
+        message: "Email Or Mobile Number Or Username Is Required",
       });
     }
 
@@ -411,7 +498,7 @@ const deactivateUser = async (req, res) => {
     if (!identifierType) {
       return res.status(400).json({
         code: "INVALID_IDENTIFIER",
-        message: "Invalid Email, mobile number or username format",
+        message: "Invalid Email, Mobile Number Or Username Format",
       });
     }
 
@@ -436,7 +523,7 @@ const deactivateUser = async (req, res) => {
     if (user.isDeactivated) {
       return res.status(400).json({
         code: "ALREADY_DEACTIVATED",
-        message: "User already deactivated",
+        message: "User Already Deactivated",
       });
     }
 
@@ -447,14 +534,14 @@ const deactivateUser = async (req, res) => {
 
     res.status(200).json({
       code: 200,
-      message: "User successfully deactivated",
+      message: "User Successfully Deactivated",
       user: userObj,
     });
   } catch (error) {
     console.error("Deactivate error:", error);
     res
       .status(500)
-      .json({ code: "UNKNOWN_ERROR", message: "An unexpected error occurred" });
+      .json({ code: "UNKNOWN_ERROR", message: "An Unexpected Error Occurred" });
   }
 };
 
@@ -465,7 +552,7 @@ const reactivateUser = async (req, res) => {
     if (!identifier) {
       return res.status(400).json({
         code: "MISSING_IDENTIFIER",
-        message: "Email or mobile number or username is required",
+        message: "Email Or Mobile Number Or Username Is Required",
       });
     }
 
@@ -473,7 +560,7 @@ const reactivateUser = async (req, res) => {
     if (!identifierType) {
       return res.status(400).json({
         code: "INVALID_IDENTIFIER",
-        message: "Invalid Email, mobile number or username format",
+        message: "Invalid Email, Mobile Number Or Username Format",
       });
     }
 
@@ -497,7 +584,7 @@ const reactivateUser = async (req, res) => {
     if (!user.isDeactivated) {
       return res
         .status(400)
-        .json({ code: "NOT_DEACTIVATED", message: "User is already active" });
+        .json({ code: "NOT_DEACTIVATED", message: "User Is Already Active" });
     }
 
     user.isDeactivated = false;
@@ -507,14 +594,14 @@ const reactivateUser = async (req, res) => {
 
     res.status(200).json({
       code: 200,
-      message: "User successfully reactivated",
+      message: "User Successfully Reactivated",
       user: userObj,
     });
   } catch (error) {
     console.error("Reactivate error:", error);
     res
       .status(500)
-      .json({ code: "UNKNOWN_ERROR", message: "An unexpected error occurred" });
+      .json({ code: "UNKNOWN_ERROR", message: "An Unexpected Error Occurred" });
   }
 };
 
@@ -525,7 +612,7 @@ const forgotPassword = async (req, res) => {
     if (!identifier) {
       return res.status(400).json({
         code: "MISSING_IDENTIFIER",
-        message: "Enter Username, Email or Number",
+        message: "Enter Username, Email Or Number",
       });
     }
 
@@ -533,11 +620,12 @@ const forgotPassword = async (req, res) => {
     if (!identifierType) {
       return res.status(400).json({
         code: "INVALID_IDENTIFIER",
-        message: "Enter a Valid Username, Email or Number",
+        message: "Enter A Valid Username, Email Or Number",
       });
     }
 
-    // 💡 1. If identifier is a username → return recovery options if present
+    // 💡 1. If identifier is a username → always return recovery options
+    // Username is always associated with one number or email, so always show choose-recovery
     if (identifierType === "username") {
       const user = await User.findOne({ username: identifier });
 
@@ -548,23 +636,30 @@ const forgotPassword = async (req, res) => {
         });
       }
 
-      const hasRecoveryOptions =
-        (user.recoveryEmails && user.recoveryEmails.length > 0) ||
-        (user.recoveryPhones && user.recoveryPhones.length > 0);
+      // Always return CHOOSE_RECOVERY_METHOD for username
+      // Include both recovery options (if any) and primary email/mobile
+      const recoveryEmails = user.recoveryEmails || [];
+      const recoveryPhones = user.recoveryPhones || [];
 
-      if (hasRecoveryOptions) {
-        return res.status(200).json({
-          code: "CHOOSE_RECOVERY_METHOD",
-          redirect: true,
-          identifier: user.username,
-          emails: user.recoveryEmails.map(maskEmail),
-          phones: user.recoveryPhones.map(maskPhone),
-          message: "Multiple recovery options found. Please choose one.",
-        });
+      // Include primary email/mobile if not already in recovery options
+      const allEmails = [...recoveryEmails];
+      if (user.email && !allEmails.includes(user.email)) {
+        allEmails.push(user.email);
       }
 
-      // Proceed to send reset code directly if no recovery options
-      return sendResetCode(user, res);
+      const allPhones = [...recoveryPhones];
+      if (user.mobile && !allPhones.includes(user.mobile)) {
+        allPhones.push(user.mobile);
+      }
+
+      return res.status(200).json({
+        code: "CHOOSE_RECOVERY_METHOD",
+        redirect: true,
+        identifier: user.username,
+        emails: allEmails.map(maskEmail),
+        phones: allPhones.map(maskPhone),
+        message: "Please Choose A Recovery Method.",
+      });
     }
 
     // 💡 2. If identifier is email or mobile → return linked usernames
@@ -584,7 +679,7 @@ const forgotPassword = async (req, res) => {
     if (users.length > 1) {
       return res.status(200).json({
         code: "MULTIPLE_USERS_FOUND",
-        message: "Multiple accounts found. Please choose a username.",
+        message: "Multiple Accounts Found. Please Choose A Username.",
         usernames: users.map((u) => ({ id: u._id, username: u.username })),
       });
     }
@@ -595,13 +690,13 @@ const forgotPassword = async (req, res) => {
     console.error("Forgot password error:", error);
     res.status(500).json({
       code: "SERVER_ERROR",
-      message: "An unexpected error occurred.",
+      message: "An Unexpected Error Occurred.",
     });
   }
 };
 
 // 🔄 Reusable reset code handler
-async function sendResetCode(user, res) {
+async function sendResetCode(user, res, username = null) {
   try {
     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiry = new Date(Date.now() + 5 * 60 * 1000);
@@ -618,22 +713,26 @@ async function sendResetCode(user, res) {
       );
       return res.status(200).json({
         code: "RESET_CODE_SENT",
-        message: "Password reset code sent has been sent to your email.",
+        message: "Password Reset Code Sent Has Been Sent To Your Email.",
         maskedDestination: user.email.replace(/(.{2})(.*)(@.*)/, "$1***$3"),
+        deliveryMethod: "email",
+        username: username || user.username, // Include username for frontend navigation
       });
     } else if (user.mobile) {
       await sendSMS(user.mobile, `Password Reset code: ${resetCode}`);
       return res.status(200).json({
         code: "RESET_CODE_SENT",
-        message: "Password reset code sent has been sent to your mobile.",
+        message: "Password Reset Code Sent Has Been Sent To Your Mobile.",
         maskedDestination: user.mobile.replace(/(.{2})(.*)(.{2})/, "$1***$3"),
+        deliveryMethod: "mobile",
+        username: username || user.username, // Include username for frontend navigation
       });
     }
   } catch (error) {
     console.error("Send code failed:", error);
     return res.status(500).json({
       code: "DELIVERY_FAILED",
-      message: "Failed to send reset code.",
+      message: "Failed To Send Reset Code.",
     });
   }
 }
@@ -645,7 +744,7 @@ const sendResetCodeForUsernameRecovery = async (req, res) => {
     if (!identifier) {
       return res.status(400).json({
         code: "MISSING_IDENTIFIER",
-        message: "Email or mobile number is required",
+        message: "Email Or Mobile Number Is Required",
       });
     }
 
@@ -661,13 +760,24 @@ const sendResetCodeForUsernameRecovery = async (req, res) => {
       });
     }
 
+    // Check if identifier is a valid recovery method
+    // It can be in recoveryEmails/recoveryPhones OR be the user's primary email/mobile
+    const isRecoveryEmail =
+      user.recoveryEmails && user.recoveryEmails.includes(identifier);
+    const isRecoveryPhone =
+      user.recoveryPhones && user.recoveryPhones.includes(identifier);
+    const isPrimaryEmail = user.email === identifier;
+    const isPrimaryMobile = user.mobile === identifier;
+
     if (
-      !user.recoveryEmails.includes(identifier) &&
-      !user.recoveryPhones.includes(identifier)
+      !isRecoveryEmail &&
+      !isRecoveryPhone &&
+      !isPrimaryEmail &&
+      !isPrimaryMobile
     ) {
       return res.status(400).json({
         code: "INVALID_RECOVERY_METHOD",
-        message: "Identifier is not a valid recovery method for this user",
+        message: "Identifier Is Not A Valid Recovery Method For This User",
       });
     }
 
@@ -723,7 +833,7 @@ Giantogram`
     console.error("Forgot password error:", error);
     res
       .status(500)
-      .json({ code: "UNKNOWN_ERROR", message: "An unexpected error occurred" });
+      .json({ code: "UNKNOWN_ERROR", message: "An Unexpected Error Occurred" });
   }
 };
 
@@ -758,7 +868,7 @@ const resetPassword = async (req, res) => {
     if (!identifier) {
       return res.status(400).json({
         code: "MISSING_FIELDS",
-        message: "Username, monile or email is required",
+        message: "Username, Mobile Or Email Is Required",
       });
     }
 
@@ -766,7 +876,7 @@ const resetPassword = async (req, res) => {
     if (!identifierType) {
       return res.status(400).json({
         code: "INVALID_IDENTIFIER",
-        message: "Invalid email, mobile or username format",
+        message: "Invalid Email, Mobile Or Username Format",
       });
     }
 
@@ -783,21 +893,21 @@ const resetPassword = async (req, res) => {
     if (!user) {
       return res.status(400).json({
         code: "INVALID_RESET",
-        message: "Invalid reset code or identifier",
+        message: "Invalid Reset Code Or Identifier",
       });
     }
 
     if (user.passwordResetCode !== resetCode) {
       return res.status(400).json({
         code: "INVALID_RESET_CODE",
-        message: "Invalid reset code",
+        message: "Invalid Reset Code",
       });
     }
 
     if (user.passwordResetExpiry < new Date()) {
       return res.status(400).json({
         code: "RESET_CODE_EXPIRED",
-        message: "Reset code has expired. Please request a new one.",
+        message: "Reset Code Has Expired. Please Request A New One.",
       });
     }
 
@@ -811,6 +921,15 @@ const resetPassword = async (req, res) => {
     user.twoFACodeExpiry = null;
 
     await user.save({ validateBeforeSave: false });
+
+    // Generate auth token for automatic login after password reset
+    const token = user.generateAuthToken();
+    const userObj = user.toObject();
+    delete userObj?.password;
+    delete userObj?.passwordResetCode;
+    delete userObj?.passwordResetExpiry;
+    delete userObj?.twoFACode;
+    delete userObj?.twoFACodeExpiry;
 
     // Send confirmation to both email and mobile if available
     const confirmationMessage = `Hello,
@@ -841,13 +960,15 @@ Giantogram`;
 
     res.status(200).json({
       code: 200,
-      message: "Password has been successfully reset",
+      message: "Password Has Been Successfully Reset",
+      token,
+      user: userObj,
     });
   } catch (error) {
     console.error("Reset password error:", error);
     res
       .status(500)
-      .json({ code: "UNKNOWN_ERROR", message: "An unexpected error occurred" });
+      .json({ code: "UNKNOWN_ERROR", message: "An Unexpected Error Occurred" });
   }
 };
 
@@ -858,7 +979,7 @@ const resend2FA = async (req, res) => {
     if (!identifier) {
       return res.status(400).json({
         code: "MISSING_FIELDS",
-        message: "Email, mobile or username is required",
+        message: "Email, Mobile Or Username Is Required",
       });
     }
 
@@ -866,7 +987,7 @@ const resend2FA = async (req, res) => {
     if (!identifierType) {
       return res.status(400).json({
         code: "INVALID_IDENTIFIER",
-        message: "Invalid email, mobile or username format",
+        message: "Invalid Email, Mobile Or Username Format",
       });
     }
 
@@ -915,14 +1036,14 @@ const resend2FA = async (req, res) => {
     if (deliveryMethod === "email" && !user.email) {
       return res.status(400).json({
         code: "EMAIL_NOT_AVAILABLE",
-        message: "Email verification requested but no email on file",
+        message: "Email Verification Requested But No Email On File",
       });
     }
 
     if (deliveryMethod === "sms" && !user.mobile) {
       return res.status(400).json({
         code: "MOBILE_NOT_AVAILABLE",
-        message: "SMS verification requested but no mobile number on file",
+        message: "SMS Verification Requested But No Mobile Number On File",
       });
     }
 
@@ -964,14 +1085,14 @@ Giantogram`
       console.error("Delivery error:", deliveryError);
       res.status(500).json({
         code: "DELIVERY_ERROR",
-        message: "Failed to send verification code",
+        message: "Failed To Send Verification Code",
       });
     }
   } catch (error) {
     console.error("Resend 2FA error:", error);
     res.status(500).json({
       code: "UNKNOWN_ERROR",
-      message: "An unexpected error occurred",
+      message: "An Unexpected Error Occurred",
     });
   }
 };
@@ -988,7 +1109,7 @@ const setPassword = async (req, res) => {
     if (!password) {
       return res.status(400).json({
         code: "MISSING_FIELDS",
-        message: "Enter Passowrd",
+        message: "Enter Password",
       });
     }
 
@@ -1036,13 +1157,13 @@ Giantogram`;
 
     res.status(200).json({
       code: 200,
-      message: "Password has been successfully set",
+      message: "Password Has Been Successfully Set",
     });
   } catch (error) {
     console.error("Set password error:", error);
     res
       .status(500)
-      .json({ code: "UNKNOWN_ERROR", message: "An unexpected error occurred" });
+      .json({ code: "UNKNOWN_ERROR", message: "An Unexpected Error Occurred" });
   }
 };
 
@@ -1051,7 +1172,7 @@ const uploadProfilePicture = async (req, res) => {
     if (!req.file) {
       return res
         .status(400)
-        .json({ code: "NO_FILE", message: "No file uploaded" });
+        .json({ code: "NO_FILE", message: "No File Uploaded" });
     }
 
     const user = req.user;
@@ -1082,7 +1203,7 @@ const uploadProfilePicture = async (req, res) => {
 
     res.status(200).json({
       code: 200,
-      message: "Uploaded successfully",
+      message: "Uploaded Successfully",
       profilePicture: user.profilePicture,
     });
   } catch (err) {
@@ -1098,7 +1219,7 @@ const sendResetAfterUsernameSelection = async (req, res) => {
     if (!identifier || !username) {
       return res.status(400).json({
         code: "MISSING_DATA",
-        message: "Both username and identifier are required",
+        message: "Both Username And Identifier Are Required",
       });
     }
 
@@ -1107,7 +1228,7 @@ const sendResetAfterUsernameSelection = async (req, res) => {
     if (!identifierType) {
       return res.status(400).json({
         code: "INVALID_IDENTIFIER",
-        message: "Invalid email or mobile format",
+        message: "Invalid Email Or Mobile Format",
       });
     }
 
@@ -1152,20 +1273,110 @@ This code expires in 15 minutes.
 
       return res.status(200).json({
         code: "RESET_SENT",
-        message: "Reset code sent to provided contact",
+        message: "Reset Code Sent To Provided Contact",
+        maskedDestination:
+          identifierType === "email"
+            ? maskEmail(identifier)
+            : maskPhone(identifier),
+        deliveryMethod: identifierType,
       });
     } catch (err) {
       console.error("Reset delivery error:", err);
       return res.status(500).json({
         code: "DELIVERY_FAILED",
-        message: "Failed to send reset code",
+        message: "Failed To Send Reset Code",
       });
     }
   } catch (err) {
     console.error("Error in sendResetAfterUsernameSelection:", err);
     return res.status(500).json({
       code: "SERVER_ERROR",
-      message: "An unexpected error occurred",
+      message: "An Unexpected Error Occurred",
+    });
+  }
+};
+
+const verifyResetCode = async (req, res) => {
+  try {
+    const { identifier, username, code } = req.body;
+
+    if (!code) {
+      return res.status(400).json({
+        code: "MISSING_FIELDS",
+        message: "Reset Code Is Required",
+      });
+    }
+
+    // If username is provided, use it to find the user (username is unique)
+    // Otherwise, fall back to identifier lookup
+    let user;
+    if (username) {
+      user = await User.findOne({ username });
+    } else if (identifier) {
+      const identifierType = getIdentifierType(identifier);
+      if (!identifierType) {
+        return res.status(400).json({
+          code: "INVALID_IDENTIFIER",
+          message: "Invalid Email, Mobile Or Username Format",
+        });
+      }
+
+      const query =
+        identifierType === "email"
+          ? { email: identifier }
+          : identifierType === "mobile"
+          ? { mobile: identifier }
+          : identifierType === "username"
+          ? { username: identifier }
+          : null;
+
+      user = await User.findOne(query);
+    } else {
+      return res.status(400).json({
+        code: "MISSING_FIELDS",
+        message: "Either Identifier Or Username Is Required",
+      });
+    }
+
+    if (!user) {
+      return res.status(401).json({
+        code: "USER_NOT_FOUND",
+        message: "No Account Found",
+      });
+    }
+
+    if (user.passwordResetCode !== code) {
+      return res.status(400).json({
+        code: "INVALID_RESET_CODE",
+        message: "Enter Valid OTP",
+      });
+    }
+
+    if (!user.passwordResetExpiry || user.passwordResetExpiry < new Date()) {
+      return res.status(400).json({
+        code: "RESET_CODE_EXPIRED",
+        message: "Reset Code Has Expired. Please Request A New One.",
+      });
+    }
+
+    // Don't clear the reset code yet - it will be cleared when password is set
+    // Return success with user info
+    const userObj = user.toObject();
+    delete userObj?.password;
+
+    res.status(200).json({
+      code: 200,
+      message: "Reset Code Verified Successfully",
+      user: userObj,
+      hasRecoveryOptions:
+        (user.recoveryEmails && user.recoveryEmails.length > 0) ||
+        (user.recoveryPhones && user.recoveryPhones.length > 0),
+    });
+  } catch (error) {
+    console.error("Verify reset code error:", error);
+    res.status(500).json({
+      code: "SERVER_ERROR",
+      message: "An Unexpected Error Occurred",
     });
   }
 };
@@ -1184,5 +1395,6 @@ module.exports = {
   setPassword,
   sendResetCodeForUsernameRecovery,
   sendResetAfterUsernameSelection,
+  verifyResetCode,
   requestOtp,
 };

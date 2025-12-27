@@ -1,6 +1,6 @@
 const isValidMobile = (mobile) => {
-  // Adjust regex based on your requirements (this supports international format)
-  const mobileRegex = /^[+]?[1-9]\d{1,14}$/;
+  // Mobile numbers must always start with + followed by country code and number
+  const mobileRegex = /^\+[1-9]\d{1,14}$/;
   return mobileRegex.test(mobile);
 };
 
@@ -9,13 +9,23 @@ const isValidEmail = (email) => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
 };
-const usernameRegex = /^[a-zA-Z0-9_]{3,25}$/; // Adjust based on your username requirements
 
 // Helper function to determine if identifier is email or mobile
 const getIdentifierType = (identifier) => {
-  if (isValidEmail(identifier)) return "email";
-  if (isValidMobile(identifier)) return "mobile";
-  if (usernameRegex.test(identifier)) return "username";
+  if (!identifier || typeof identifier !== "string") return null;
+  
+  const trimmed = identifier.trim();
+  if (!trimmed) return null;
+  
+  // Check email first (most specific)
+  if (isValidEmail(trimmed)) return "email";
+  
+  // Check mobile second - must start with +
+  if (trimmed.startsWith("+") && isValidMobile(trimmed)) return "mobile";
+  
+  // If it's not email or mobile, and it's not empty, it could be a username
+  // Username can be any characters and any length (minimum 1 character)
+  if (trimmed.length > 0) return "username";
 
   return null;
 };

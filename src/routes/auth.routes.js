@@ -14,6 +14,7 @@ const {
   setPassword,
   sendResetCodeForUsernameRecovery,
   sendResetAfterUsernameSelection,
+  verifyResetCode,
   requestOtp,
 } = require("../controller/auth.controller.js");
 const auth = require("../middleware/auth.js");
@@ -46,6 +47,8 @@ router.post(
   "/send-reset-after-username-selection",
   sendResetAfterUsernameSelection
 );
+
+router.post("/verify-reset-code", verifyResetCode);
 
 router.post("/resend-2fa", resend2FA);
 
@@ -136,9 +139,25 @@ router.post("/recovery", async (req, res) => {
     }
 
     // If user is found, return the recovery information
+    // Include both recovery options and primary email/mobile
+    const recoveryEmails = user.recoveryEmails || [];
+    const recoveryPhones = user.recoveryPhones || [];
+    
+    // Include primary email if not already in recovery emails
+    const allEmails = [...recoveryEmails];
+    if (user.email && !allEmails.includes(user.email)) {
+      allEmails.push(user.email);
+    }
+    
+    // Include primary mobile if not already in recovery phones
+    const allPhones = [...recoveryPhones];
+    if (user.mobile && !allPhones.includes(user.mobile)) {
+      allPhones.push(user.mobile);
+    }
+    
     res.json({
-      emails: user.recoveryEmails || [],
-      phones: user.recoveryPhones || [],
+      emails: allEmails,
+      phones: allPhones,
       mobile: user.mobile || "",
       email: user.email || "",
     });
