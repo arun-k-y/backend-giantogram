@@ -1,4 +1,5 @@
 const User = require("../model/user.modal.js");
+const PendingSignup = require("../model/pendingSignup.modal.js");
 const sendEmail = require("../utils/sendEmail.js");
 const sendSMS = require("../utils/sendSMS.js");
 const {
@@ -115,35 +116,41 @@ const signup = async (req, res) => {
       });
     }
 
-    const [usernameExists, emailExists, mobileExists] = await Promise.all([
-      User.findOne({ username }),
-      email ? User.findOne({ email }) : null,
-      mobile ? User.findOne({ mobile }) : null,
-    ]);
+    // Check if username already exists in User collection (only username is unique)
+    const usernameExists = await User.findOne({ username });
 
     if (usernameExists)
       return res
         .status(400)
         .send({ code: "USERNAME_TAKEN", message: "Username Already In Use" });
 
+    // Check if there's already a pending signup for this username
+    const pendingUsername = await PendingSignup.findOne({ username });
+
+    if (pendingUsername) {
+      // Delete old pending signup if exists
+      await PendingSignup.deleteMany({ username });
+    }
+
     const cleanGender = gender?.trim() || undefined;
-    const user = new User({
-      name,
-      username,
-      email,
-      mobile,
-      // password,
-      dob,
-      gender: cleanGender,
-    });
 
     // 2FA Code Generation
     const twoFACode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
-    user.twoFACode = twoFACode;
-    user.twoFACodeExpiry = expiry;
 
-    await user.save({ validateBeforeSave: false });
+    // Store signup data in PendingSignup instead of creating User
+    const pendingSignup = new PendingSignup({
+      name,
+      username,
+      email,
+      mobile,
+      dob,
+      gender: cleanGender,
+      twoFACode,
+      twoFACodeExpiry: expiry,
+    });
+
+    await pendingSignup.save();
 
     // Delivery Preference (fallback to available method)
     let deliveryMethod = email ? "email" : "sms";
@@ -152,8 +159,21 @@ const signup = async (req, res) => {
       if (deliveryMethod === "email") {
         await sendEmail(
           email,
-          "Giantogram Verification Code",
-          `Hi ${username},\n\nWelcome to Giantogram!\n\nYour verification code is: ${twoFACode}\n\nThis code expires in 5 minutes.`
+          "Welcome to Giantogram - Verify Your Account",
+          `Hello ${name || username},
+
+Welcome to Giantogram! We're excited to have you join our community.
+
+To complete your account registration, please use the verification code below:
+
+Verification Code: ${twoFACode}
+
+This code will expire in 5 minutes. Please enter it in the app to verify your account and start using Giantogram.
+
+If you didn't create an account with Giantogram, please ignore this email.
+
+Best regards,
+The Giantogram Team`
         );
       } else {
         await sendSMS(
@@ -162,17 +182,9 @@ const signup = async (req, res) => {
         );
       }
 
-      const userObj = user.toObject();
-      delete userObj.password;
-      delete userObj.twoFACode;
-      delete userObj.passwordResetCode;
-      delete userObj.twoFACodeExpiry;
-      delete userObj.email;
-
-      return res.status(201).send({
-        code: 201,
-        message: `Account created. A verification code has been sent to your ${deliveryMethod}.`,
-        user: userObj,
+      return res.status(200).send({
+        code: 200,
+        message: `A verification code has been sent to your ${deliveryMethod}. Please verify to create your account.`,
         deliveryMethod,
         maskedDestination:
           deliveryMethod === "email"
@@ -181,9 +193,11 @@ const signup = async (req, res) => {
       });
     } catch (deliveryError) {
       console.error("Failed to deliver 2FA after signup:", deliveryError);
+      // Delete pending signup if OTP delivery fails
+      await PendingSignup.deleteOne({ _id: pendingSignup._id });
       return res.status(500).send({
         code: "DELIVERY_ERROR",
-        message: "Account Created, But Failed To Send Verification Code.",
+        message: "Failed To Send Verification Code. Please Try Again.",
       });
     }
   } catch (error) {
@@ -198,6 +212,8 @@ const signin = async (req, res) => {
   try {
     const { identifier, password, preferredMethod } = req.body; // identifier can be email or mobile
 
+    console.log("Signin request:", { identifier, hasPassword: !!password, preferredMethod });
+
     if (!identifier) {
       return res.status(400).json({
         code: "MISSING_FIELDS",
@@ -206,6 +222,7 @@ const signin = async (req, res) => {
     }
 
     const identifierType = getIdentifierType(identifier);
+    console.log("Identifier type detected:", identifierType);
     if (!identifierType) {
       // Identify what type of identifier the user was trying to enter
       let errorMessage = "Invalid email or mobile number or username format";
@@ -214,7 +231,8 @@ const signin = async (req, res) => {
         errorMessage = "Enter Valid Email/Gmail";
       } else if (/^\d+$/.test(identifier)) {
         // Numeric input without + prefix - suggest selecting country code
-        errorMessage = "Enter Valid Username or select country code for mobile number";
+        errorMessage =
+          "Enter Valid Username or select country code for mobile number";
       } else if (identifier.trim().length > 0) {
         errorMessage = "Enter Valid Username";
       }
@@ -235,134 +253,363 @@ const signin = async (req, res) => {
         : null;
 
     const user = await User.findOne(query);
+    console.log("User found:", !!user, "Password provided:", !!password, "Password value:", password);
+
+    // Check if password is provided (not empty string)
+    const hasPassword = password && password.trim().length > 0;
 
     // If password is not provided, check if account exists and respond accordingly
-    if (!password) {
+    if (!hasPassword) {
       if (!user) {
-        // Account doesn't exist - return appropriate error message based on identifier type
-        let errorMessage = "No account found";
-        
-        if (identifierType === "email") {
-          errorMessage = "Enter Valid Email/Gmail";
-        } else if (identifierType === "mobile") {
-          errorMessage = "Enter Valid Number";
-        } else if (identifierType === "username") {
-          // If it's a 10-digit number treated as username, suggest it might need country code
-          // if (/^\d{10}$/.test(identifier)) {
-          //   errorMessage = "Enter Valid Username or select country code for mobile number";
-          // } else {
-            errorMessage = "Enter Valid Username";
-          // }
+        // Account doesn't exist and no password - allow account creation flow
+        // If identifier is username, we can't send OTP (no email/mobile to send to)
+        // User must use email/mobile to create account
+        if (identifierType === "username") {
+          return res.status(400).json({
+            code: "ACCOUNT_NOT_FOUND",
+            message: "No account found with this username. Please use your email or mobile number to login or create an account.",
+          });
         }
-        
-        return res.status(400).json({
-          code: "ACCOUNT_NOT_FOUND",
-          message: errorMessage,
+
+        // Generate unique username
+        let username;
+        do {
+          username = `user${Math.floor(100000 + Math.random() * 900000)}`;
+        } while (await User.findOne({ username }) || await PendingSignup.findOne({ username }));
+
+        // Generate 6-digit 2FA code
+        const twoFACode = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+        // Determine email/mobile based on identifier type
+        const email = identifierType === "email" ? identifier : undefined;
+        const mobile = identifierType === "mobile" ? identifier : undefined;
+
+        // Check if there's already a pending signup for this identifier
+        const existingPending = await PendingSignup.findOne(
+          identifierType === "email" ? { email } : identifierType === "mobile" ? { mobile } : { username: identifier }
+        );
+
+        // Delete old pending signup if exists
+        if (existingPending) {
+          await PendingSignup.deleteOne({ _id: existingPending._id });
+        }
+
+        // Create pending signup with dummy data (no password since user didn't provide one)
+        const pendingSignup = new PendingSignup({
+          name: "Giantogram User",
+          username,
+          email,
+          mobile,
+          dob: new Date("2000-01-01"),
+          twoFACode,
+          twoFACodeExpiry: expiry,
         });
+
+        await pendingSignup.save();
+
+        // Determine delivery method
+        let deliveryMethod = preferredMethod || (email ? "email" : "sms");
+
+        try {
+          if (deliveryMethod === "email" && email) {
+            await sendEmail(
+              email,
+              "Welcome to Giantogram - Verify Your Account",
+              `Hello Giantogram User,
+
+Welcome to Giantogram! We're excited to have you join our community.
+
+To complete your account registration, please use the verification code below:
+
+Verification Code: ${twoFACode}
+
+This code will expire in 5 minutes. Please enter it in the app to verify your account and start using Giantogram.
+
+If you didn't create an account with Giantogram, please ignore this email.
+
+Best regards,
+The Giantogram Team`
+            );
+          } else if (deliveryMethod === "sms" && mobile) {
+            await sendSMS(
+              mobile,
+              `Welcome to Giantogram! Your verification code is: ${twoFACode}. This code expires in 5 minutes.`
+            );
+          } else {
+            // If requested method not available, try the other one
+            if (email && deliveryMethod === "sms") {
+              deliveryMethod = "email";
+              await sendEmail(
+                email,
+                "Welcome to Giantogram - Verify Your Account",
+                `Hello Giantogram User,
+
+Welcome to Giantogram! We're excited to have you join our community.
+
+To complete your account registration, please use the verification code below:
+
+Verification Code: ${twoFACode}
+
+This code will expire in 5 minutes. Please enter it in the app to verify your account and start using Giantogram.
+
+If you didn't create an account with Giantogram, please ignore this email.
+
+Best regards,
+The Giantogram Team`
+              );
+            } else if (mobile && deliveryMethod === "email") {
+              deliveryMethod = "sms";
+              await sendSMS(
+                mobile,
+                `Welcome to Giantogram! Your verification code is: ${twoFACode}. This code expires in 5 minutes.`
+              );
+            } else {
+              // Delete pending signup if we can't send OTP
+              await PendingSignup.deleteOne({ _id: pendingSignup._id });
+        return res.status(400).json({
+                code: "DELIVERY_METHOD_UNAVAILABLE",
+                message: "Unable to send verification code. Please check your identifier.",
+              });
+            }
+          }
+
+          console.log("Sending ACCOUNT_CREATION_REQUIRED response (no password provided)");
+          return res.status(200).json({
+            code: "ACCOUNT_CREATION_REQUIRED",
+            message: `A verification code has been sent to your ${deliveryMethod === "email" ? "email" : "mobile"}. Please verify to create your account.`,
+            deliveryMethod,
+            maskedDestination:
+              deliveryMethod === "email"
+                ? email.replace(/(.{2})(.*)(@.*)/, "$1***$3")
+                : mobile.replace(/(.{2})(.*)(.{2})/, "$1***$3"),
+            identifier: identifier,
+          });
+        } catch (deliveryError) {
+          console.error("Failed to deliver OTP for account creation:", deliveryError);
+          await PendingSignup.deleteOne({ _id: pendingSignup._id });
+          return res.status(500).json({
+            code: "DELIVERY_ERROR",
+            message: "Failed To Send Verification Code. Please Try Again.",
+          });
+        }
       }
-      // Account exists - ask for password
+      // Account exists but no password provided
+      // If account has no password set, allow OTP login
+      if (!user.password) {
+        // Generate OTP for login
+        const twoFACode = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+        user.twoFACode = twoFACode;
+        user.twoFACodeExpiry = expiry;
+        await user.save({ validateBeforeSave: false });
+
+        // Determine delivery method
+        let deliveryMethod = preferredMethod;
+        if (!deliveryMethod) {
+          if (user.email && user.mobile) {
+            deliveryMethod = "email"; // Default to email if both available
+          } else if (user.email) {
+            deliveryMethod = "email";
+          } else if (user.mobile) {
+            deliveryMethod = "sms";
+          }
+        }
+
+        // Send OTP
+        try {
+          if (deliveryMethod === "email" && user.email) {
+            await sendEmail(
+              user.email,
+              "Giantogram - Sign In Verification Code",
+              `Hello ${user.name || user.username},
+
+We received a request to sign in to your Giantogram account.
+
+Please use the verification code below to complete your sign-in:
+
+Verification Code: ${twoFACode}
+
+This code will expire in 5 minutes. Enter it in the app to access your account.
+
+If you didn't request this sign-in, please ignore this email.
+
+Stay secure,
+The Giantogram Team`
+            );
+          } else if (deliveryMethod === "sms" && user.mobile) {
+            await sendSMS(
+              user.mobile,
+              `Giantogram verification code: ${twoFACode}. This code will expire in 5 minutes.`
+            );
+          } else {
+            return res.status(400).json({
+              code: "DELIVERY_METHOD_UNAVAILABLE",
+              message: "Unable to send verification code. No email or mobile on file.",
+            });
+          }
+
+          return res.status(200).json({
+            code: 200,
+            message: `A verification code has been sent to your ${deliveryMethod === "email" ? "email" : "mobile"}. Please enter it to continue.`,
+            deliveryMethod,
+            maskedDestination:
+              deliveryMethod === "email"
+                ? user.email.replace(/(.{2})(.*)(@.*)/, "$1***$3")
+                : user.mobile.replace(/(.{2})(.*)(.{2})/, "$1***$3"),
+          });
+        } catch (deliveryError) {
+          console.error("Delivery error:", deliveryError);
+          return res.status(500).json({
+            code: "DELIVERY_ERROR",
+            message: "Failed To Send Verification Code",
+          });
+        }
+      }
+      
+      // Account exists and has password - ask for password
       return res.status(400).json({
         code: "PASSWORD_REQUIRED",
         message: "Password Is Required",
       });
     }
 
-    // If account doesn't exist, create user with dummy data and send OTP
     if (!user) {
-      // For username, if account doesn't exist, return error (can't create account without email/mobile for OTP)
+      console.log("User not found - creating account. Identifier type:", identifierType);
+      // Account doesn't exist - create pending signup with dummy data and send OTP
+      // If identifier is username, we can't send OTP (no email/mobile)
       if (identifierType === "username") {
-        return res.status(401).json({
-          code: "USER_NOT_FOUND",
-          message: "Enter Valid Username",
+        console.log("Username identifier - cannot create account without email/mobile");
+      return res.status(400).json({
+          code: "ACCOUNT_NOT_FOUND",
+          message: "No account found with this username. Please use email or mobile number to create an account.",
         });
       }
 
-      // Create user with dummy data for email/mobile
-      const dummyData = {
-        name: "Giantogram User",
-        dob: new Date("2000-01-01"),
-      };
+      // Generate unique username
+      let username;
+      do {
+        username = `user${Math.floor(100000 + Math.random() * 900000)}`;
+      } while (await User.findOne({ username }) || await PendingSignup.findOne({ username }));
 
-      // Set identifier based on type
-      if (identifierType === "email") {
-        dummyData.email = identifier;
-        // Generate username for email-based account
-        let username;
-        do {
-          username = `user${Math.floor(100000 + Math.random() * 900000)}`;
-        } while (await User.findOne({ username }));
-        dummyData.username = username;
-      } else if (identifierType === "mobile") {
-        dummyData.mobile = identifier;
-        // Generate username for mobile-based account
-        let username;
-        do {
-          username = `user${Math.floor(100000 + Math.random() * 900000)}`;
-        } while (await User.findOne({ username }));
-        dummyData.username = username;
+    // Generate 6-digit 2FA code
+    const twoFACode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+      // Determine email/mobile based on identifier type
+      const email = identifierType === "email" ? identifier : undefined;
+      const mobile = identifierType === "mobile" ? identifier : undefined;
+
+      // Check if there's already a pending signup for this identifier
+      const existingPending = await PendingSignup.findOne(
+        identifierType === "email" ? { email } : identifierType === "mobile" ? { mobile } : { username: identifier }
+      );
+
+      // Delete old pending signup if exists
+      if (existingPending) {
+        await PendingSignup.deleteOne({ _id: existingPending._id });
       }
 
-      // Set password
-      dummyData.password = password;
+      // Create pending signup with dummy data
+      // Store password if provided (will be hashed when user is created)
+      const pendingSignup = new PendingSignup({
+        name: "Giantogram User",
+        username,
+        email,
+        mobile,
+        dob: new Date("2000-01-01"),
+        password: password, // Store password to save when account is created
+        twoFACode,
+        twoFACodeExpiry: expiry,
+      });
 
-      user = new User(dummyData);
-
-      // Generate 6-digit 2FA code
-      const twoFACode = Math.floor(100000 + Math.random() * 900000).toString();
-      const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
-
-      user.twoFACode = twoFACode;
-      user.twoFACodeExpiry = expiry;
-      await user.save({ validateBeforeSave: false });
+      await pendingSignup.save();
 
       // Determine delivery method
-      let deliveryMethod = preferredMethod || (identifierType === "email" ? "email" : "sms");
+      let deliveryMethod = preferredMethod || (email ? "email" : "sms");
 
       try {
-        if (deliveryMethod === "email" && user.email) {
-          await sendEmail(
-            user.email,
-            "Giantogram Verification Code",
-            `Hello,
+        if (deliveryMethod === "email" && email) {
+        await sendEmail(
+            email,
+            "Welcome to Giantogram - Verify Your Account",
+            `Hello Giantogram User,
 
-Welcome to Giantogram! Please use the verification code below to verify your account:
+Welcome to Giantogram! We're excited to have you join our community.
+
+To complete your account registration, please use the verification code below:
 
 Verification Code: ${twoFACode}
 
-This code will expire in 5 minutes.
+This code will expire in 5 minutes. Please enter it in the app to verify your account and start using Giantogram.
 
-Thanks,
-Giantogram`
-          );
-        } else if (deliveryMethod === "sms" && user.mobile) {
-          await sendSMS(
-            user.mobile,
-            `Welcome to Giantogram! Your verification code is: ${twoFACode}. This code will expire in 5 minutes.`
+If you didn't create an account with Giantogram, please ignore this email.
+
+Best regards,
+The Giantogram Team`
+        );
+        } else if (deliveryMethod === "sms" && mobile) {
+        await sendSMS(
+            mobile,
+            `Welcome to Giantogram! Your verification code is: ${twoFACode}. This code expires in 5 minutes.`
           );
         } else {
-          // Should not happen, but handle gracefully
-          return res.status(500).json({
-            code: "DELIVERY_ERROR",
-            message: "Unable to send verification code. Please try again.",
-          });
+          // If requested method not available, try the other one
+          if (email && deliveryMethod === "sms") {
+            deliveryMethod = "email";
+            await sendEmail(
+              email,
+              "Welcome to Giantogram - Verify Your Account",
+              `Hello Giantogram User,
+
+Welcome to Giantogram! We're excited to have you join our community.
+
+To complete your account registration, please use the verification code below:
+
+Verification Code: ${twoFACode}
+
+This code will expire in 5 minutes. Please enter it in the app to verify your account and start using Giantogram.
+
+If you didn't create an account with Giantogram, please ignore this email.
+
+Best regards,
+The Giantogram Team`
+            );
+          } else if (mobile && deliveryMethod === "email") {
+            deliveryMethod = "sms";
+            await sendSMS(
+              mobile,
+              `Welcome to Giantogram! Your verification code is: ${twoFACode}. This code expires in 5 minutes.`
+            );
+          } else {
+            // Delete pending signup if we can't send OTP
+            await PendingSignup.deleteOne({ _id: pendingSignup._id });
+            return res.status(400).json({
+              code: "DELIVERY_METHOD_UNAVAILABLE",
+              message: "Unable to send verification code. Please check your identifier.",
+            });
+          }
         }
 
+        console.log("Sending ACCOUNT_CREATION_REQUIRED response");
         return res.status(200).json({
-          code: 200,
-          message: `A verification code has been sent to your ${
-            deliveryMethod === "email" ? "email" : "mobile"
-          }. Please enter it to continue.`,
-          deliveryMethod,
-          maskedDestination:
-            deliveryMethod === "email"
-              ? user.email.replace(/(.{2})(.*)(@.*)/, "$1***$3")
-              : user.mobile.replace(/(.{2})(.*)(.{2})/, "$1***$3"),
-        });
-      } catch (deliveryError) {
-        console.error("Delivery error:", deliveryError);
+          code: "ACCOUNT_CREATION_REQUIRED",
+          message: `A verification code has been sent to your ${deliveryMethod === "email" ? "email" : "mobile"}. Please verify to create your account.`,
+        deliveryMethod,
+        maskedDestination:
+          deliveryMethod === "email"
+              ? email.replace(/(.{2})(.*)(@.*)/, "$1***$3")
+              : mobile.replace(/(.{2})(.*)(.{2})/, "$1***$3"),
+          identifier: identifier, // Return the identifier for OTP verification
+      });
+    } catch (deliveryError) {
+        console.error("Failed to deliver OTP for account creation:", deliveryError);
+        // Delete pending signup if OTP delivery fails
+        await PendingSignup.deleteOne({ _id: pendingSignup._id });
         return res.status(500).json({
-          code: "DELIVERY_ERROR",
-          message: "Failed To Send Verification Code",
+        code: "DELIVERY_ERROR",
+          message: "Failed To Send Verification Code. Please Try Again.",
         });
       }
     }
@@ -386,13 +633,11 @@ Giantogram`
     // Password is valid - skip OTP and return token directly
     const userObj = user.toObject();
     delete userObj?.password;
-    delete userObj?.twoFACode;
-    delete userObj?.twoFACodeExpiry;
 
     const token = user.generateAuthToken();
     const profilePicture = user.checkProfileComplete();
-
-    return res.status(200).json({
+    
+    res.status(200).json({
       code: 200,
       message: "Login Successful",
       token,
@@ -416,6 +661,8 @@ const verify2FA = async (req, res) => {
   try {
     const { identifier, code } = req.body; // identifier can be email or mobile
 
+    console.log("Verify2FA request:", { identifier, code });
+
     if (!identifier || !code) {
       return res.status(400).json({
         code: "MISSING_FIELDS",
@@ -424,6 +671,7 @@ const verify2FA = async (req, res) => {
     }
 
     const identifierType = getIdentifierType(identifier);
+    console.log("Verify2FA identifier type:", identifierType);
     if (!identifierType) {
       return res.status(400).json({
         code: "INVALID_IDENTIFIER",
@@ -440,6 +688,103 @@ const verify2FA = async (req, res) => {
         ? { username: identifier }
         : null;
 
+    console.log("Verify2FA query:", query);
+
+    // First check for pending signup (signup flow)
+    const pendingSignup = await PendingSignup.findOne(query);
+    console.log("Pending signup found:", !!pendingSignup);
+
+    if (pendingSignup) {
+      // This is a signup flow - verify OTP and create account
+      // Check if OTP was requested
+      if (!pendingSignup.twoFACode || !pendingSignup.twoFACodeExpiry) {
+        return res.status(400).json({ 
+          code: "OTP_NOT_REQUESTED", 
+          message: "Please Request A New OTP Code" 
+        });
+      }
+
+      // Check if OTP has expired
+      if (pendingSignup.twoFACodeExpiry < new Date()) {
+        return res.status(400).json({ 
+          code: "CODE_EXPIRED", 
+          message: "Code Expired. Please Request A New One." 
+        });
+      }
+
+      // Check if OTP matches
+      if (pendingSignup.twoFACode !== code) {
+        return res.status(400).json({ 
+          code: "INVALID_CODE", 
+          message: "Enter Valid OTP" 
+        });
+      }
+
+      // Check again if username already exists (race condition check - only username is unique)
+      const usernameExists = await User.findOne({ username: pendingSignup.username });
+
+      if (usernameExists) {
+        // Account was created in the meantime, delete pending signup
+        await PendingSignup.deleteOne({ _id: pendingSignup._id });
+        return res.status(400).json({
+          code: "ACCOUNT_EXISTS",
+          message: "Account Already Exists. Please Login Instead.",
+        });
+      }
+
+      // Create the user account
+      console.log("Creating user from pending signup:", {
+        name: pendingSignup.name,
+        username: pendingSignup.username,
+        email: pendingSignup.email,
+        mobile: pendingSignup.mobile,
+        dob: pendingSignup.dob,
+        hasPassword: !!pendingSignup.password,
+      });
+
+      // Build user object - only include password if it exists
+      const userData = {
+        name: pendingSignup.name,
+        username: pendingSignup.username,
+        email: pendingSignup.email,
+        mobile: pendingSignup.mobile,
+        dob: pendingSignup.dob,
+        gender: pendingSignup.gender,
+      };
+
+      // Only add password if it was provided
+      if (pendingSignup.password && pendingSignup.password.trim().length > 0) {
+        userData.password = pendingSignup.password;
+      }
+
+      const user = new User(userData);
+
+      try {
+        await user.save({ validateBeforeSave: false });
+        console.log("User created successfully:", user._id);
+      } catch (saveError) {
+        console.error("Error saving user:", saveError);
+        throw saveError;
+      }
+
+      // Delete pending signup after successful account creation
+      await PendingSignup.deleteOne({ _id: pendingSignup._id });
+
+      const userObj = user.toObject();
+      delete userObj?.password;
+
+      const token = user.generateAuthToken();
+      const profilePicture = user.checkProfileComplete();
+      return res.status(200).json({
+        code: 200,
+        message: "Account Created Successfully",
+        token,
+        user: userObj,
+        profilePicture,
+      });
+    }
+
+    // Check for existing user (login flow)
     const user = await User.findOne(query);
 
     if (!user) {
@@ -448,14 +793,28 @@ const verify2FA = async (req, res) => {
         .json({ code: "USER_NOT_FOUND", message: "No Account Found" });
     }
 
-    if (user.twoFACode !== code) {
-      return res
-        .status(400)
-        .json({ code: 400, message: "Enter Valid OTP" });
+    // Check if OTP was requested
+    if (!user.twoFACode || !user.twoFACodeExpiry) {
+      return res.status(400).json({ 
+        code: "OTP_NOT_REQUESTED", 
+        message: "Please Request A New OTP Code" 
+      });
     }
 
+    // Check if OTP has expired
     if (user.twoFACodeExpiry < new Date()) {
-      return res.status(400).json({ code: 400, message: "Code Expired" });
+      return res.status(400).json({ 
+        code: "CODE_EXPIRED", 
+        message: "Code Expired. Please Request A New One." 
+      });
+    }
+
+    // Check if OTP matches
+    if (user.twoFACode !== code) {
+      return res.status(400).json({ 
+        code: "INVALID_CODE", 
+        message: "Enter Valid OTP" 
+      });
     }
 
     // Clear 2FA fields after successful verification
@@ -477,9 +836,18 @@ const verify2FA = async (req, res) => {
     });
   } catch (error) {
     console.error("2FA verification error:", error);
+    console.error("Error stack:", error.stack);
+    console.error("Error details:", {
+      message: error.message,
+      name: error.name,
+    });
     res
       .status(500)
-      .json({ code: "UNKNOWN_ERROR", message: "An Unexpected Error Occurred" });
+      .json({ 
+        code: "UNKNOWN_ERROR", 
+        message: "An Unexpected Error Occurred",
+        error: process.env.NODE_ENV === "development" ? error.message : undefined
+      });
   }
 };
 
@@ -708,8 +1076,24 @@ async function sendResetCode(user, res, username = null) {
     if (user.email) {
       await sendEmail(
         user.email,
-        "Giantogram Password Reset Code",
-        `Password Reset code: ${resetCode}`
+        "Giantogram - Password Reset Code",
+        `Hello ${user.name || user.username},
+
+We received a request to reset the password for your Giantogram account.
+
+Please use the reset code below to create a new password:
+
+Reset Code: ${resetCode}
+
+This code will expire in 5 minutes. Enter it in the app to reset your password.
+
+If you didn't request a password reset:
+- You can safely ignore this email
+- Your password will remain unchanged
+- If you're concerned about account security, please contact our support team
+
+Stay secure,
+The Giantogram Team`
       );
       return res.status(200).json({
         code: "RESET_CODE_SENT",
@@ -797,17 +1181,26 @@ const sendResetCodeForUsernameRecovery = async (req, res) => {
       if (identifierType === "email") {
         await sendEmail(
           identifier,
-          "Giantogram Password Reset Code",
+          "Giantogram - Password Reset Code",
           `Hello,
 
-We received a request to reset your password. Please use the reset code below to create a new password:
+We received a request to reset the password for your Giantogram account.
+
+Please use the reset code below to create a new password:
 
 Reset Code: ${resetCode}
 
-This code will expire in 5 minutes. If you didn't request a password reset, you can safely ignore this email.
+This code will expire in 5 minutes. Enter it in the app to reset your password.
 
-Thanks,
-Giantogram`
+Security Tips:
+- Never share your reset code with anyone
+- Choose a strong, unique password
+- If you didn't request this reset, please ignore this email
+
+If you're concerned about account security, please contact our support team immediately.
+
+Stay secure,
+The Giantogram Team`
         );
       } else if (identifierType === "mobile") {
         await sendSMS(
@@ -932,12 +1325,23 @@ const resetPassword = async (req, res) => {
     delete userObj?.twoFACodeExpiry;
 
     // Send confirmation to both email and mobile if available
-    const confirmationMessage = `Hello,
+    const confirmationMessage = `Hello ${user.name || user.username},
 
-Your password has been successfully changed. If you didn't make this change, please contact our support team immediately.
+Your Giantogram account password has been successfully changed.
 
-Thanks,
-Giantogram`;
+If you made this change, you can safely ignore this email.
+
+If you didn't make this change:
+- Your account may be compromised
+- Please contact our support team immediately
+- Consider reviewing your account security settings
+
+Account Details:
+- Username: ${user.username}
+- Time: ${new Date().toLocaleString()}
+
+Stay secure,
+The Giantogram Team`;
 
     try {
       if (user.email) {
@@ -1001,6 +1405,75 @@ const resend2FA = async (req, res) => {
         ? { username: identifier }
         : null;
 
+    // First check for pending signup (signup flow)
+    const pendingSignup = await PendingSignup.findOne(query);
+
+    if (pendingSignup) {
+      // This is a signup flow - resend OTP for pending signup
+      const twoFACode = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+      pendingSignup.twoFACode = twoFACode;
+      pendingSignup.twoFACodeExpiry = expiry;
+      await pendingSignup.save();
+
+      // Determine delivery method
+      let deliveryMethod =
+        preferredMethod || (pendingSignup.email ? "email" : "sms");
+
+      try {
+        if (deliveryMethod === "email" && pendingSignup.email) {
+          await sendEmail(
+            pendingSignup.email,
+            "Giantogram - New Verification Code",
+            `Hello ${pendingSignup.name || pendingSignup.username},
+
+We've generated a new verification code for your Giantogram account registration.
+
+Please use the verification code below to complete your account setup:
+
+Verification Code: ${twoFACode}
+
+This code will expire in 5 minutes. Enter it in the app to verify your account.
+
+If you didn't request a new code, you can safely ignore this email.
+
+Best regards,
+The Giantogram Team`
+          );
+        } else if (deliveryMethod === "sms" && pendingSignup.mobile) {
+          await sendSMS(
+            pendingSignup.mobile,
+            `Welcome to Giantogram! Your verification code is: ${twoFACode}. This code expires in 5 minutes.`
+          );
+        } else {
+          return res.status(400).json({
+            code: "DELIVERY_METHOD_UNAVAILABLE",
+            message: "Requested Delivery Method Not Available",
+          });
+        }
+
+        return res.status(200).json({
+          code: 200,
+          message: `A new verification code has been sent to your ${
+            deliveryMethod === "email" ? "email" : "mobile"
+          }.`,
+          deliveryMethod,
+          maskedDestination:
+            deliveryMethod === "email"
+              ? pendingSignup.email.replace(/(.{2})(.*)(@.*)/, "$1***$3")
+              : pendingSignup.mobile.replace(/(.{2})(.*)(.{2})/, "$1***$3"),
+        });
+      } catch (deliveryError) {
+        console.error("Delivery error:", deliveryError);
+        return res.status(500).json({
+          code: "DELIVERY_ERROR",
+          message: "Failed To Send Verification Code",
+        });
+      }
+    }
+
+    // Check for existing user (login flow)
     const user = await User.findOne(query);
 
     if (!user) {
@@ -1051,17 +1524,24 @@ const resend2FA = async (req, res) => {
       if (deliveryMethod === "email") {
         await sendEmail(
           user.email,
-          "Giantogram Verification Code",
-          `Hello,
+          "Giantogram - New Sign In Verification Code",
+          `Hello ${user.name || user.username},
 
-We received a request to resend your verification code. Please use the code below to continue:
+We've generated a new verification code for your Giantogram account sign-in.
+
+Please use the verification code below to complete your sign-in:
 
 Verification Code: ${twoFACode}
 
-This code will expire in 5 minutes. If you didn't request this, you can safely ignore this email.
+This code will expire in 5 minutes. Enter it in the app to access your account.
 
-Thanks,
-Giantogram`
+If you didn't request a new verification code:
+- You can safely ignore this email
+- Your account remains secure
+- If you're concerned, please contact our support team
+
+Stay secure,
+The Giantogram Team`
         );
       } else if (deliveryMethod === "sms") {
         await sendSMS(
@@ -1129,18 +1609,33 @@ const setPassword = async (req, res) => {
     await user1.save({ validateBeforeSave: false });
 
     // Send confirmation to both email and mobile if available
-    const confirmationMessage = `Hello,
+    const confirmationMessage = `Hello ${user1.name || user1.username},
 
-Your password has been successfully set.
+Your Giantogram account password has been successfully set.
 
-Thanks,
-Giantogram`;
+Your account is now secured with a password. You can use this password along with your username, email, or mobile number to sign in to your account.
+
+Security Tips:
+- Never share your password with anyone
+- Use a unique password that you don't use elsewhere
+- Consider enabling two-factor authentication for added security
+
+If you didn't set this password:
+- Please contact our support team immediately
+- Consider changing your password right away
+
+Account Details:
+- Username: ${user1.username}
+- Time: ${new Date().toLocaleString()}
+
+Stay secure,
+The Giantogram Team`;
 
     try {
       if (user1.email) {
         await sendEmail(
           user1.email,
-          "Giantogram Password Set",
+          "Giantogram - Password Successfully Set",
           confirmationMessage
         );
       }
@@ -1253,16 +1748,26 @@ const sendResetAfterUsernameSelection = async (req, res) => {
       if (identifierType === "email") {
         await sendEmail(
           identifier,
-          "Giantogram Password Reset Code",
+          "Giantogram - Password Reset Code",
           `Hello ${username},
 
-We received a request to reset your password.
+We received a request to reset the password for your Giantogram account.
 
-Password reset code: ${resetCode}
+Please use the reset code below to create a new password:
 
-This code expires in 15 minutes.
+Reset Code: ${resetCode}
 
-– Team Giantogram`
+This code will expire in 15 minutes. Enter it in the app to reset your password.
+
+Security Reminders:
+- Never share your reset code with anyone
+- Choose a strong, unique password
+- If you didn't request this reset, please ignore this email
+
+If you're concerned about account security, please contact our support team immediately.
+
+Stay secure,
+The Giantogram Team`
         );
       } else if (identifierType === "mobile") {
         await sendSMS(

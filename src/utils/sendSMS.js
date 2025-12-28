@@ -18,20 +18,16 @@
 const twilio = require("twilio");
 
 // Validate required environment variables
-if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_PHONE_NUMBER) {
+const accountSid = process.env.TWILIO_ACCOUNT_SID;
+const authToken = process.env.TWILIO_AUTH_TOKEN;
+const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
+
+if (!accountSid || !authToken || !twilioPhoneNumber) {
   console.warn("⚠️  Twilio credentials not found in environment variables");
+  console.warn("⚠️  Please set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER in your .env file");
 }
 
-// const accountSid = process.env.TWILIO_ACCOUNT_SID
-// const authToken = process.env.TWILIO_AUTH_TOKEN 
-// const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER 
-
-const accountSid = "ACce09ba9fc6052a5f35190dfb11cd7f91"; // Replace with your actual Twilio SID
-const authToken = "bad4b5369b00eff8507c7eaa5fcd4f19"; // Replace with your actual Twilio Auth Token
-const twilioPhoneNumber = "+1234567890"; // Replace with your Twilio phone number
-
-
-const client = twilio(accountSid, authToken);
+const client = accountSid && authToken ? twilio(accountSid, authToken) : null;
 
 /**
  * Send SMS using Twilio
@@ -40,6 +36,14 @@ const client = twilio(accountSid, authToken);
  * @returns {Promise<object>} - The Twilio message response
  */
 const sendSMS = async (mobile, message) => {
+  if (!client) {
+    throw new Error("Twilio client not initialized. Please check your environment variables.");
+  }
+
+  if (!twilioPhoneNumber) {
+    throw new Error("TWILIO_PHONE_NUMBER not set in environment variables.");
+  }
+
   try {
     const response = await client.messages.create({
       body: message,
@@ -47,10 +51,17 @@ const sendSMS = async (mobile, message) => {
       to: mobile,
     });
 
-    console.log(`✅ SMS sent to ${mobile}: ${message}`);
+    console.log(`✅ SMS sent successfully!`);
+    console.log(`   To: ${mobile}`);
+    console.log(`   From: ${twilioPhoneNumber}`);
+    console.log(`   Message SID: ${response.sid}`);
+    console.log(`   Status: ${response.status}`);
     return response;
   } catch (error) {
     console.error(`❌ Failed to send SMS to ${mobile}:`, error.message);
+    if (error.code) {
+      console.error(`   Error Code: ${error.code}`);
+    }
     throw error;
   }
 };
