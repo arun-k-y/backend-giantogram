@@ -87,6 +87,14 @@ const signup = async (req, res) => {
       });
     }
 
+    // Validate username doesn't contain spaces
+    if (username.includes(" ")) {
+      return res.status(400).send({
+        code: "INVALID_USERNAME",
+        message: "Username Cannot Contain Spaces",
+      });
+    }
+
     if (email && !isValidEmail(email)) {
       return res
         .status(400)
@@ -212,7 +220,11 @@ const signin = async (req, res) => {
   try {
     const { identifier, password, preferredMethod } = req.body; // identifier can be email or mobile
 
-    console.log("Signin request:", { identifier, hasPassword: !!password, preferredMethod });
+    console.log("Signin request:", {
+      identifier,
+      hasPassword: !!password,
+      preferredMethod,
+    });
 
     if (!identifier) {
       return res.status(400).json({
@@ -253,7 +265,14 @@ const signin = async (req, res) => {
         : null;
 
     const user = await User.findOne(query);
-    console.log("User found:", !!user, "Password provided:", !!password, "Password value:", password);
+    console.log(
+      "User found:",
+      !!user,
+      "Password provided:",
+      !!password,
+      "Password value:",
+      password
+    );
 
     // Check if password is provided (not empty string)
     const hasPassword = password && password.trim().length > 0;
@@ -267,7 +286,8 @@ const signin = async (req, res) => {
         if (identifierType === "username") {
           return res.status(400).json({
             code: "ACCOUNT_NOT_FOUND",
-            message: "No account found with this username. Please use your email or mobile number to login or create an account.",
+            message:
+              "No account found with this username. Please use your email or mobile number to login or create an account.",
           });
         }
 
@@ -275,10 +295,15 @@ const signin = async (req, res) => {
         let username;
         do {
           username = `user${Math.floor(100000 + Math.random() * 900000)}`;
-        } while (await User.findOne({ username }) || await PendingSignup.findOne({ username }));
+        } while (
+          (await User.findOne({ username })) ||
+          (await PendingSignup.findOne({ username }))
+        );
 
         // Generate 6-digit 2FA code
-        const twoFACode = Math.floor(100000 + Math.random() * 900000).toString();
+        const twoFACode = Math.floor(
+          100000 + Math.random() * 900000
+        ).toString();
         const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
         // Determine email/mobile based on identifier type
@@ -287,7 +312,11 @@ const signin = async (req, res) => {
 
         // Check if there's already a pending signup for this identifier
         const existingPending = await PendingSignup.findOne(
-          identifierType === "email" ? { email } : identifierType === "mobile" ? { mobile } : { username: identifier }
+          identifierType === "email"
+            ? { email }
+            : identifierType === "mobile"
+            ? { mobile }
+            : { username: identifier }
         );
 
         // Delete old pending signup if exists
@@ -367,17 +396,22 @@ The Giantogram Team`
             } else {
               // Delete pending signup if we can't send OTP
               await PendingSignup.deleteOne({ _id: pendingSignup._id });
-        return res.status(400).json({
+              return res.status(400).json({
                 code: "DELIVERY_METHOD_UNAVAILABLE",
-                message: "Unable to send verification code. Please check your identifier.",
+                message:
+                  "Unable to send verification code. Please check your identifier.",
               });
             }
           }
 
-          console.log("Sending ACCOUNT_CREATION_REQUIRED response (no password provided)");
+          console.log(
+            "Sending ACCOUNT_CREATION_REQUIRED response (no password provided)"
+          );
           return res.status(200).json({
             code: "ACCOUNT_CREATION_REQUIRED",
-            message: `A verification code has been sent to your ${deliveryMethod === "email" ? "email" : "mobile"}. Please verify to create your account.`,
+            message: `A verification code has been sent to your ${
+              deliveryMethod === "email" ? "email" : "mobile"
+            }. Please verify to create your account.`,
             deliveryMethod,
             maskedDestination:
               deliveryMethod === "email"
@@ -386,7 +420,10 @@ The Giantogram Team`
             identifier: identifier,
           });
         } catch (deliveryError) {
-          console.error("Failed to deliver OTP for account creation:", deliveryError);
+          console.error(
+            "Failed to deliver OTP for account creation:",
+            deliveryError
+          );
           await PendingSignup.deleteOne({ _id: pendingSignup._id });
           return res.status(500).json({
             code: "DELIVERY_ERROR",
@@ -398,7 +435,9 @@ The Giantogram Team`
       // If account has no password set, allow OTP login
       if (!user.password) {
         // Generate OTP for login
-        const twoFACode = Math.floor(100000 + Math.random() * 900000).toString();
+        const twoFACode = Math.floor(
+          100000 + Math.random() * 900000
+        ).toString();
         const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
         user.twoFACode = twoFACode;
@@ -446,13 +485,16 @@ The Giantogram Team`
           } else {
             return res.status(400).json({
               code: "DELIVERY_METHOD_UNAVAILABLE",
-              message: "Unable to send verification code. No email or mobile on file.",
+              message:
+                "Unable to send verification code. No email or mobile on file.",
             });
           }
 
           return res.status(200).json({
             code: 200,
-            message: `A verification code has been sent to your ${deliveryMethod === "email" ? "email" : "mobile"}. Please enter it to continue.`,
+            message: `A verification code has been sent to your ${
+              deliveryMethod === "email" ? "email" : "mobile"
+            }. Please enter it to continue.`,
             deliveryMethod,
             maskedDestination:
               deliveryMethod === "email"
@@ -467,7 +509,7 @@ The Giantogram Team`
           });
         }
       }
-      
+
       // Account exists and has password - ask for password
       return res.status(400).json({
         code: "PASSWORD_REQUIRED",
@@ -476,14 +518,20 @@ The Giantogram Team`
     }
 
     if (!user) {
-      console.log("User not found - creating account. Identifier type:", identifierType);
+      console.log(
+        "User not found - creating account. Identifier type:",
+        identifierType
+      );
       // Account doesn't exist - create pending signup with dummy data and send OTP
       // If identifier is username, we can't send OTP (no email/mobile)
       if (identifierType === "username") {
-        console.log("Username identifier - cannot create account without email/mobile");
-      return res.status(400).json({
+        console.log(
+          "Username identifier - cannot create account without email/mobile"
+        );
+        return res.status(400).json({
           code: "ACCOUNT_NOT_FOUND",
-          message: "No account found with this username. Please use email or mobile number to create an account.",
+          message:
+            "No account found with this username. Please use email or mobile number to create an account.",
         });
       }
 
@@ -491,11 +539,14 @@ The Giantogram Team`
       let username;
       do {
         username = `user${Math.floor(100000 + Math.random() * 900000)}`;
-      } while (await User.findOne({ username }) || await PendingSignup.findOne({ username }));
+      } while (
+        (await User.findOne({ username })) ||
+        (await PendingSignup.findOne({ username }))
+      );
 
-    // Generate 6-digit 2FA code
-    const twoFACode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+      // Generate 6-digit 2FA code
+      const twoFACode = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
       // Determine email/mobile based on identifier type
       const email = identifierType === "email" ? identifier : undefined;
@@ -503,7 +554,11 @@ The Giantogram Team`
 
       // Check if there's already a pending signup for this identifier
       const existingPending = await PendingSignup.findOne(
-        identifierType === "email" ? { email } : identifierType === "mobile" ? { mobile } : { username: identifier }
+        identifierType === "email"
+          ? { email }
+          : identifierType === "mobile"
+          ? { mobile }
+          : { username: identifier }
       );
 
       // Delete old pending signup if exists
@@ -531,7 +586,7 @@ The Giantogram Team`
 
       try {
         if (deliveryMethod === "email" && email) {
-        await sendEmail(
+          await sendEmail(
             email,
             "Welcome to Giantogram - Verify Your Account",
             `Hello Giantogram User,
@@ -548,9 +603,9 @@ If you didn't create an account with Giantogram, please ignore this email.
 
 Best regards,
 The Giantogram Team`
-        );
+          );
         } else if (deliveryMethod === "sms" && mobile) {
-        await sendSMS(
+          await sendSMS(
             mobile,
             `Welcome to Giantogram! Your verification code is: ${twoFACode}. This code expires in 5 minutes.`
           );
@@ -587,7 +642,8 @@ The Giantogram Team`
             await PendingSignup.deleteOne({ _id: pendingSignup._id });
             return res.status(400).json({
               code: "DELIVERY_METHOD_UNAVAILABLE",
-              message: "Unable to send verification code. Please check your identifier.",
+              message:
+                "Unable to send verification code. Please check your identifier.",
             });
           }
         }
@@ -595,20 +651,25 @@ The Giantogram Team`
         console.log("Sending ACCOUNT_CREATION_REQUIRED response");
         return res.status(200).json({
           code: "ACCOUNT_CREATION_REQUIRED",
-          message: `A verification code has been sent to your ${deliveryMethod === "email" ? "email" : "mobile"}. Please verify to create your account.`,
-        deliveryMethod,
-        maskedDestination:
-          deliveryMethod === "email"
+          message: `A verification code has been sent to your ${
+            deliveryMethod === "email" ? "email" : "mobile"
+          }. Please verify to create your account.`,
+          deliveryMethod,
+          maskedDestination:
+            deliveryMethod === "email"
               ? email.replace(/(.{2})(.*)(@.*)/, "$1***$3")
               : mobile.replace(/(.{2})(.*)(.{2})/, "$1***$3"),
           identifier: identifier, // Return the identifier for OTP verification
-      });
-    } catch (deliveryError) {
-        console.error("Failed to deliver OTP for account creation:", deliveryError);
+        });
+      } catch (deliveryError) {
+        console.error(
+          "Failed to deliver OTP for account creation:",
+          deliveryError
+        );
         // Delete pending signup if OTP delivery fails
         await PendingSignup.deleteOne({ _id: pendingSignup._id });
         return res.status(500).json({
-        code: "DELIVERY_ERROR",
+          code: "DELIVERY_ERROR",
           message: "Failed To Send Verification Code. Please Try Again.",
         });
       }
@@ -630,13 +691,30 @@ The Giantogram Team`
         .json({ code: "INVALID_PASSWORD", message: "Invalid Password" });
     }
 
-    // Password is valid - skip OTP and return token directly
+    // Check if account is deactivated - return user data with token so frontend can show reactivate modal
+    // We still return a token so the user can reactivate without re-entering credentials
     const userObj = user.toObject();
     delete userObj?.password;
 
+    // If account is deactivated, return token and user data so frontend can show reactivate modal
+    if (user.isDeactivated) {
+      const token = user.generateAuthToken();
+      const profilePicture = user.checkProfileComplete();
+
+      return res.status(200).json({
+        code: 200,
+        message: "Account is deactivated",
+        token,
+        user: userObj,
+        profilePicture,
+        skipOtp: true,
+      });
+    }
+
+    // Password is valid and account is active - skip OTP and return token directly
     const token = user.generateAuthToken();
     const profilePicture = user.checkProfileComplete();
-    
+
     res.status(200).json({
       code: 200,
       message: "Login Successful",
@@ -698,30 +776,32 @@ const verify2FA = async (req, res) => {
       // This is a signup flow - verify OTP and create account
       // Check if OTP was requested
       if (!pendingSignup.twoFACode || !pendingSignup.twoFACodeExpiry) {
-        return res.status(400).json({ 
-          code: "OTP_NOT_REQUESTED", 
-          message: "Please Request A New OTP Code" 
+        return res.status(400).json({
+          code: "OTP_NOT_REQUESTED",
+          message: "Please Request A New OTP Code",
         });
       }
 
       // Check if OTP has expired
       if (pendingSignup.twoFACodeExpiry < new Date()) {
-        return res.status(400).json({ 
-          code: "CODE_EXPIRED", 
-          message: "Code Expired. Please Request A New One." 
+        return res.status(400).json({
+          code: "CODE_EXPIRED",
+          message: "Code Expired. Please Request A New One.",
         });
       }
 
       // Check if OTP matches
       if (pendingSignup.twoFACode !== code) {
-        return res.status(400).json({ 
-          code: "INVALID_CODE", 
-          message: "Enter Valid OTP" 
+        return res.status(400).json({
+          code: "INVALID_CODE",
+          message: "Enter Valid OTP",
         });
       }
 
       // Check again if username already exists (race condition check - only username is unique)
-      const usernameExists = await User.findOne({ username: pendingSignup.username });
+      const usernameExists = await User.findOne({
+        username: pendingSignup.username,
+      });
 
       if (usernameExists) {
         // Account was created in the meantime, delete pending signup
@@ -795,25 +875,25 @@ const verify2FA = async (req, res) => {
 
     // Check if OTP was requested
     if (!user.twoFACode || !user.twoFACodeExpiry) {
-      return res.status(400).json({ 
-        code: "OTP_NOT_REQUESTED", 
-        message: "Please Request A New OTP Code" 
+      return res.status(400).json({
+        code: "OTP_NOT_REQUESTED",
+        message: "Please Request A New OTP Code",
       });
     }
 
     // Check if OTP has expired
     if (user.twoFACodeExpiry < new Date()) {
-      return res.status(400).json({ 
-        code: "CODE_EXPIRED", 
-        message: "Code Expired. Please Request A New One." 
+      return res.status(400).json({
+        code: "CODE_EXPIRED",
+        message: "Code Expired. Please Request A New One.",
       });
     }
 
     // Check if OTP matches
     if (user.twoFACode !== code) {
-      return res.status(400).json({ 
-        code: "INVALID_CODE", 
-        message: "Enter Valid OTP" 
+      return res.status(400).json({
+        code: "INVALID_CODE",
+        message: "Enter Valid OTP",
       });
     }
 
@@ -841,13 +921,11 @@ const verify2FA = async (req, res) => {
       message: error.message,
       name: error.name,
     });
-    res
-      .status(500)
-      .json({ 
-        code: "UNKNOWN_ERROR", 
-        message: "An Unexpected Error Occurred",
-        error: process.env.NODE_ENV === "development" ? error.message : undefined
-      });
+    res.status(500).json({
+      code: "UNKNOWN_ERROR",
+      message: "An Unexpected Error Occurred",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
   }
 };
 
@@ -1030,7 +1108,8 @@ const forgotPassword = async (req, res) => {
       });
     }
 
-    // 💡 2. If identifier is email or mobile → return linked usernames
+    // 💡 2. If identifier is email or mobile → always return usernames (even if single user)
+    // This ensures consistent flow: user selects username → then chooses recovery method
     const query =
       identifierType === "email"
         ? { email: identifier }
@@ -1044,16 +1123,16 @@ const forgotPassword = async (req, res) => {
       });
     }
 
-    if (users.length > 1) {
-      return res.status(200).json({
-        code: "MULTIPLE_USERS_FOUND",
-        message: "Multiple Accounts Found. Please Choose A Username.",
-        usernames: users.map((u) => ({ id: u._id, username: u.username })),
-      });
-    }
-
-    // Single user → send code
-    return sendResetCode(users[0], res);
+    // Always return MULTIPLE_USERS_FOUND for email/mobile (even if single user)
+    // This ensures user always sees username selection screen
+    return res.status(200).json({
+      code: "MULTIPLE_USERS_FOUND",
+      message:
+        users.length > 1
+          ? "Multiple Accounts Found. Please Choose A Username."
+          : "Please Choose A Username.",
+      usernames: users.map((u) => ({ id: u._id, username: u.username })),
+    });
   } catch (error) {
     console.error("Forgot password error:", error);
     res.status(500).json({
