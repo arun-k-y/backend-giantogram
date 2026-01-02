@@ -106,8 +106,11 @@ router.post("/recovery", async (req, res) => {
         if (!process.env.JWT_SECRET) {
           console.warn("⚠️  JWT_SECRET not found in environment variables");
         }
-        
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret");
+
+        const decoded = jwt.verify(
+          token,
+          process.env.JWT_SECRET || "your_jwt_secret"
+        );
         user = await User.findById(decoded._id).select(
           "recoveryEmails recoveryPhones mobile email"
         );
@@ -142,19 +145,19 @@ router.post("/recovery", async (req, res) => {
     // Include both recovery options and primary email/mobile
     const recoveryEmails = user.recoveryEmails || [];
     const recoveryPhones = user.recoveryPhones || [];
-    
+
     // Include primary email if not already in recovery emails
     const allEmails = [...recoveryEmails];
     if (user.email && !allEmails.includes(user.email)) {
       allEmails.push(user.email);
     }
-    
+
     // Include primary mobile if not already in recovery phones
     const allPhones = [...recoveryPhones];
     if (user.mobile && !allPhones.includes(user.mobile)) {
       allPhones.push(user.mobile);
     }
-    
+
     res.json({
       emails: allEmails,
       phones: allPhones,

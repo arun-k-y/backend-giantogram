@@ -87,6 +87,14 @@ const signup = async (req, res) => {
       });
     }
 
+    // Validate name length (max 25 characters)
+    if (name && name.trim().length > 25) {
+      return res.status(400).send({
+        code: "INVALID_NAME",
+        message: "Name Cannot Exceed 25 Characters",
+      });
+    }
+
     // Validate username doesn't contain spaces
     if (username.includes(" ")) {
       return res.status(400).send({
@@ -1743,46 +1751,149 @@ The Giantogram Team`;
 
 const uploadProfilePicture = async (req, res) => {
   try {
+    // Check if file was uploaded
     if (!req.file) {
+      console.error("Upload error: No file received");
       return res
         .status(400)
         .json({ code: "NO_FILE", message: "No File Uploaded" });
     }
 
+    // Check if user is authenticated
+    if (!req.user) {
+      console.error("Upload error: User not authenticated");
+      return res
+        .status(401)
+        .json({ code: "UNAUTHORIZED", message: "User not authenticated" });
+    }
+
     const user = req.user;
+
+    // Check if file path exists
+    if (!req.file.path) {
+      console.error("Upload error: File path is missing");
+      return res
+        .status(400)
+        .json({ code: "INVALID_FILE", message: "File path is missing" });
+    }
+
+    // Verify file actually exists on disk
+    const fs = require("fs");
+    if (!fs.existsSync(req.file.path)) {
+      console.error(
+        "Upload error: File does not exist at path:",
+        req.file.path
+      );
+      return res
+        .status(400)
+        .json({ code: "FILE_NOT_FOUND", message: "Uploaded file not found" });
+    }
+
+    // Check Cloudinary configuration
+    if (
+      !process.env.CLOUDINARY_CLOUD_NAME ||
+      !process.env.CLOUDINARY_API_KEY ||
+      !process.env.CLOUDINARY_API_SECRET
+    ) {
+      console.error("Upload error: Cloudinary credentials not configured");
+      return res
+        .status(500)
+        .json({
+          code: "CONFIG_ERROR",
+          message: "Upload service not configured",
+        });
+    }
 
     // Optional: Extract public_id from old URL to delete old image
     if (user.profilePicture) {
-      const publicIdMatch = user.profilePicture.match(
-        /\/profile_pictures\/([^/.]+)/
-      );
-      if (publicIdMatch?.[1]) {
-        await cloudinary.uploader.destroy(
-          `profile_pictures/${publicIdMatch[1]}`
+      try {
+        const publicIdMatch = user.profilePicture.match(
+          /\/profile_pictures\/([^/.]+)/
+        );
+        if (publicIdMatch?.[1]) {
+          await cloudinary.uploader.destroy(
+            `profile_pictures/${publicIdMatch[1]}`
+          );
+        }
+      } catch (deleteErr) {
+        // Log but don't fail if old image deletion fails
+        console.warn(
+          "Failed to delete old profile picture:",
+          deleteErr.message
         );
       }
     }
 
     // Upload new image with a fixed public_id to overwrite or create new
-    const result = await cloudinary.uploader.upload(req.file.path, {
-      folder: "profile_pictures",
-      public_id: user._id.toString(), // So it's always the same ID per user
-      overwrite: true,
-      resource_type: "image",
-    });
+    let result;
+    try {
+      result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "profile_pictures",
+        public_id: user._id.toString(), // So it's always the same ID per user
+        overwrite: true,
+        resource_type: "image",
+      });
+
+      // Clean up temporary file after successful upload
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (cleanupErr) {
+        console.warn("Failed to delete temporary file:", cleanupErr.message);
+        // Don't fail the request if cleanup fails
+      }
+    } catch (uploadErr) {
+      // Clean up temporary file even if upload fails
+      try {
+        if (fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+        }
+      } catch (cleanupErr) {
+        console.warn(
+          "Failed to delete temporary file after error:",
+          cleanupErr.message
+        );
+      }
+
+      console.error("Cloudinary upload error:", uploadErr);
+      return res.status(500).json({
+        code: "UPLOAD_ERROR",
+        message: `Failed to upload image: ${uploadErr.message}`,
+      });
+    }
+
+    if (!result || !result.secure_url) {
+      console.error("Upload error: Invalid response from Cloudinary");
+      return res.status(500).json({
+        code: "UPLOAD_ERROR",
+        message: "Invalid response from upload service",
+      });
+    }
 
     // Save the new URL
-    user.profilePicture = result.secure_url;
-    await user.save({ validateBeforeSave: false });
+    try {
+      user.profilePicture = result.secure_url;
+      await user.save({ validateBeforeSave: false });
+    } catch (saveErr) {
+      console.error("Database save error:", saveErr);
+      return res.status(500).json({
+        code: "SAVE_ERROR",
+        message: `Failed to save profile picture: ${saveErr.message}`,
+      });
+    }
 
     res.status(200).json({
       code: 200,
       message: "Uploaded Successfully",
       profilePicture: user.profilePicture,
+      url: user.profilePicture, // Also include 'url' for backward compatibility
     });
   } catch (err) {
-    console.error("Cloudinary upload error:", err);
-    res.status(500).json({ code: "UPLOAD_ERROR", message: err.message });
+    console.error("Upload profile picture error:", err);
+    console.error("Error stack:", err.stack);
+    res.status(500).json({
+      code: "UPLOAD_ERROR",
+      message: err.message || "An unexpected error occurred during upload",
+    });
   }
 };
 
