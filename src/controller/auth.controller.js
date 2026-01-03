@@ -688,7 +688,7 @@ The Giantogram Team`
       return res.status(400).json({
         code: "PASSWORD_NOT_SET",
         message:
-          "This account does not have a password. Please use OTP sign-in or set a password first.",
+          "This account does not have a password. Please reset password.",
       });
     }
 
@@ -1796,12 +1796,10 @@ const uploadProfilePicture = async (req, res) => {
       !process.env.CLOUDINARY_API_SECRET
     ) {
       console.error("Upload error: Cloudinary credentials not configured");
-      return res
-        .status(500)
-        .json({
-          code: "CONFIG_ERROR",
-          message: "Upload service not configured",
-        });
+      return res.status(500).json({
+        code: "CONFIG_ERROR",
+        message: "Upload service not configured",
+      });
     }
 
     // Optional: Extract public_id from old URL to delete old image
