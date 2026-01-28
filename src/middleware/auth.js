@@ -34,7 +34,7 @@
 // module.exports = auth;
 
 const jwt = require("jsonwebtoken");
-const User = require("../model/user.modal.js"); // make sure this path is correct
+const User = require("../model/user.model.js");
 
 const auth = async (req, res, next) => {
   console.log("inside auth");

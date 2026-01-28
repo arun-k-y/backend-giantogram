@@ -11,6 +11,7 @@ const mongoose = require("mongoose");
 const authRoutes = require("./routes/auth.routes.js");
 const authRoutes2 = require("./routes/user.routes.js");
 const uploadRoutes = require("./routes/user.routes.js");
+const notificationRoutes = require("./routes/notification.routes.js");
 const { validateEnvironmentVariables, corsConfig, rateLimitConfig } = require("./config/security.js");
 
 const cors = require("cors"); // Import the cors middleware
@@ -100,3 +101,4 @@ if (!fs.existsSync(tmpDir)) {
 app.use("/api/auth", authRoutes);
 app.use("/v2/auth", authRoutes2);
 app.use("/v2/upload", uploadRoutes);
+app.use("/api/notifications", notificationRoutes);

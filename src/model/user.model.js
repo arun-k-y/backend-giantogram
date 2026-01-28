@@ -64,6 +64,19 @@ const userSchema = new mongoose.Schema(
     passwordResetExpiry: { type: Date, default: null },
     recoveryEmails: { type: [String], default: [] },
     recoveryPhones: { type: [String], default: [] },
+    pushToken: {
+      type: String,
+      default: null,
+    },
+    pushTokenPlatform: {
+      type: String,
+      enum: ["ios", "android"],
+      default: null,
+    },
+    pushTokenUpdatedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

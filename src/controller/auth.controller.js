@@ -1,5 +1,5 @@
-const User = require("../model/user.modal.js");
-const PendingSignup = require("../model/pendingSignup.modal.js");
+const User = require("../model/user.model.js");
+const PendingSignup = require("../model/pendingSignup.model.js");
 const sendEmail = require("../utils/sendEmail.js");
 const sendSMS = require("../utils/sendSMS.js");
 const {

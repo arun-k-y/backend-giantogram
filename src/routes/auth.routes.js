@@ -19,7 +19,7 @@ const {
 } = require("../controller/auth.controller.js");
 const auth = require("../middleware/auth.js");
 const upload = require("../utils/upload.js");
-const User = require("../model/user.modal.js");
+const User = require("../model/user.model.js");
 
 const router = express.Router();
 
